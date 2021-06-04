@@ -29,4 +29,5 @@ def run():
 
     print(sentiment_classifier([
         'Basically there\'s a family where a little boy (Jake) thinks there\'s a zombie in his closet & his parents are fighting all the time.',
-        'I sure would like to see a resurrection of a up dated Seahunt series with the tech they have today it would bring back the kid excitement in me.']))
+        'I sure would like to see a resurrection of a up dated Seahunt series with the tech they have today it would bring back the kid excitement in me.',
+        'This movie is boring and stupid, I am sure I have never seen much more bullshit in two hours of my life.']))
