@@ -185,5 +185,8 @@ Thumbs.db
 ### IntelliJ ###
 .idea
 .data
-data
+data/*
 models
+
+!data/raw
+!data/raw/*
