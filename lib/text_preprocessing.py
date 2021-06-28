@@ -98,7 +98,8 @@ def use_text(token: Token) -> None:
 
 
 def preprocess_text(
-        s: str, lang: Optional[Language] = None,
+        s: str,
+        lang: Optional[Language] = None,
         pipeline: Optional[List[Callable[[Token], None]]] = None,
         clean: List[Callable[[str], str]] = []) -> str:
     """
@@ -107,6 +108,7 @@ def preprocess_text(
     :param s: The string to be pre-processed
     :param lang: A spaCy language pipeline. As returned by `spacy.load()`
     :param pipeline:  A list of pre-processing functions
+    :param clean: An optional clean function which might be executed on text before processing with spaCy
     :return: The pre-processed string
     """
     doc, pipeline = _parse(s, lang, pipeline, clean)
@@ -120,7 +122,8 @@ def preprocess_text(
 
 
 def preprocess_tokens(
-        s: str, lang: Optional[Language] = None,
+        s: str,
+        lang: Optional[Language] = None,
         pipeline: Optional[List[Callable[[Token], None]]] = None) -> List[str]:
 
     """

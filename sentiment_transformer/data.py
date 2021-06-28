@@ -48,7 +48,7 @@ class SentimentDataModule(pl.LightningDataModule):
                  spacy_model: str = 'en_core_web_sm',
                  transformer_model: str = 'bert-base-uncased',
                  train_test_validate_split: (float, float, float) = (0.7, 0.2, 0.1),
-                 batch_sizes: (int, int, int) = (200, 200, 200)):
+                 batch_sizes: (int, int, int) = (20, 20, 20)):
 
         super().__init__()
         self.raw_path = raw_path

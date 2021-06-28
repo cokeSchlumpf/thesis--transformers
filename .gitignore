@@ -148,6 +148,7 @@ ENV/
 env.bak/
 venv.bak/
 pythonenv*
+env_tmp
 
 # Spyder project settings
 .spyderproject
@@ -189,4 +190,6 @@ data/*
 models
 
 !data/raw
-!data/raw/*
+data/raw/*
+!data/raw/IMDB Dataset.csv
+!data/raw/weatherAUS.csv

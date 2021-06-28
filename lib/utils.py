@@ -1,5 +1,9 @@
 import hashlib
 import pickle
+import spacy
+
+from typing import List
+
 
 def checksum_of_file(file: str) -> str:
     """
@@ -18,6 +22,22 @@ def checksum_of_file(file: str) -> str:
         md5.update(chunk)
 
     return md5.hexdigest()
+
+
+def extract_sentence_tokens(lang: spacy.Language, s: str) -> List[List[str]]:
+    """
+    Uses spaCy to split text into sentences.
+
+    Args:
+        lang: The spaCy language model.
+        s: The sentence to split.
+
+    Returns:
+        A list of sentences.
+    """
+    doc = lang(s)
+
+    return [[token.text for token in sent] for sent in doc.sents]
 
 
 def read_file_to_object(file: str) -> any:

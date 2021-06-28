@@ -24,6 +24,7 @@ class SentimentClassifier(pl.LightningModule):
         self.data_module = data_module
         self.transformer: PreTrainedModel = AutoModel.from_pretrained(data_module.transformer_model)
 
+
         for name, param in self.transformer.named_parameters():
             param.requires_grad = False
 
@@ -68,4 +69,4 @@ class SentimentClassifier(pl.LightningModule):
         self.shared_step('test', batch)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.002)
+        return torch.optim.Adam(self.parameters(), lr=0.0002)
