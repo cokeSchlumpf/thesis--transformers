@@ -152,7 +152,9 @@ def preprocess_output_sample(sample: str, lang: spacy.Language, tokenizer: PreTr
     token_ids = tokenizer.convert_tokens_to_ids(tokens)
     token_ids = token_ids + ([0] * (max_length - len(tokens)))
 
-    return GuidedSummarizationTarget(torch.Tensor(token_ids), torch.tensor(attention_mask))
+    return GuidedSummarizationTarget(
+        torch.Tensor(token_ids).type(torch.LongTensor),
+        torch.tensor(attention_mask).type(torch.IntTensor))
 
 
 def preprocess_input_sample(

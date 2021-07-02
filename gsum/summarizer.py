@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from torch import nn
-from transformers import AutoModel, BatchEncoding
+from transformers import AutoModel
 from typing import List
 
 from .config import GuidedSummarizationConfig
@@ -30,28 +30,66 @@ class GuidedAbsSum(pl.LightningModule):
         self.enc = AbsSumTransformerEncoder(cfg)  # AbsTransformerEncoder
 
         # Shared embedding layer
-        embedding = nn.Embedding(self.enc.bert.model.config.vocab_size, self.enc.bert.model.config.hidden_size, padding_idx=0)
-        embedding.weight = copy.deepcopy(self.enc.bert.model.embeddings.word_embeddings.weight)
+        embedding = nn.Embedding(self.enc.bert.config.vocab_size, self.enc.bert.config.hidden_size, padding_idx=0)
+        embedding.weight = copy.deepcopy(self.enc.bert.embeddings.word_embeddings.weight)
 
         # Decoder
         self.dec = AbsSumTransformerDecoder(
             cfg, cfg.decoder_layers, cfg.decoder_dim, cfg.decoder_heads, cfg.decoder_ff_dim, cfg.decoder_dropout,
-            embedding, self.enc.bert.model.config.vocab_size)
+            embedding, self.enc.bert.config.vocab_size)
 
+        # Generator
+        self.gen = nn.Sequential(
+            nn.Linear(self.enc.bert.config.hidden_size, self.enc.bert.config.vocab_size),
+            nn.LogSoftmax(dim=-1))
+
+        self.loss_func = LabelSmoothingLoss(cfg.label_smoothing, self.enc.bert.config.vocab_size, 0)
+
+        pass
         #
         # TODO: Weights initialization?
         #
 
-    def predict(self, x_input: dict):
+    def forward(self, *args, **kwargs) -> any:
+        pass
+
+    def predict(self, x_input: dict, target: torch.Tensor):
         """
         TODO: Document
         """
         self.enc.to(self.device)
         self.dec.to(self.device)
+        self.gen.to(self.device)
 
-        top_vec = self.bert(x_input)
-        sents_vec = top_vec[torch.arange(top_vec.size(0)).unsqueeze(1), x_input['cls_indices'].type(torch.LongTensor)]
-        return self.enc(sents_vec, x_input['cls_mask'])
+        top_vec, gui_vec = self.enc(x_input)
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
+        dec_out, state = self.dec(target, top_vec, gui_vec, state)
+        output = self.gen(dec_out)
+
+        return output, state
+
+    def shared_step(self, step, batch):
+        x_input = batch['x_input']
+        target = batch['y']['token_ids']
+        y = batch['y']
+        dec_out, state = self.predict(x_input, target)
+
+        loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target.view(-1))
+        self.log(f'{step}_loss', loss, prog_bar=True)
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self.shared_step('train', batch)
+
+    def validation_step(self, batch, batch_idx):
+        return self.shared_step('val', batch)
+
+    def test_step(self, batch, batch_idx):
+        return self.shared_step('test', batch)
+
+    def configure_optimizers(self):
+        # TOOD: Configure optimizer // sep optimizers / schedules BERT and remaining layers.
+        return torch.optim.Adam(self.parameters(), lr=0.0002)
 
 
 class GuidedExtSum(pl.LightningModule):
@@ -189,23 +227,36 @@ class AbsSumTransformerEncoder(nn.Module):
             """
             my_pos_embeddings = nn.Embedding(config.max_pos, self.bert.config.hidden_size)
             my_pos_embeddings.weight.data[:512] = self.bert.embeddings.position_embeddings.weight.data
-            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None,
-                                                  :].repeat(config.max_pos - 512, 1)
+            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_pos - 512, 1)
             self.bert.embeddings.position_embeddings = my_pos_embeddings
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.model.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout)
+            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout, batch_first=True)
 
         self.guidance_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.model.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout)
+            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout, batch_first=True)
 
-    def forward(self, x_input: BatchEncoding, x_guidance: BatchEncoding):
-        input_vec = self.bert(**x_input)
-        input_vec = self.input_transformer_encoder(input_vec, 1 - x_input['attention_mask'])
+    def forward(self, x_input: dict):
+        """
+        Encodes the input provided by `x_input`. `x_input` is a dict containing `token_ids` and `attention_mask` as produced by
+        Bert Tokenizer. Additionally `segment_ids` should be provided to mark different sentences, as described by GSum Paper.
+
+        `segment_ids` is a tensor of shape [BATCH_SIZE x INPUT_SEQUENCE_LENGTH]
+
+        :param x_input: The tokenized input sequence.
+
+        Returns
+            Encoded input sequence; Tensor of shape [BATCH_SIZE x INPUT_SEQUENCE_LENGTH x BERT_HIDDEN_SIZE]
+        """
+        input_vec = self.bert(x_input['token_ids'], attention_mask=x_input['attention_mask'], token_type_ids=x_input['segment_ids'])
+        input_vec = self.input_transformer_encoder(input_vec['last_hidden_state'], src_key_padding_mask=(1 - x_input['attention_mask']).bool())
+        """
+        TODO: Implement guidance signal
         guidance_vec = self.bert(**x_guidance)
         guidance_vec = self.guidance_transformer_encoder(guidance_vec, 1 - x_guidance['attention_mask'])
+        """
 
-        return input_vec, guidance_vec
+        return input_vec, input_vec
 
 
 class AbsSumTransformerDecoderLayer(nn.Module):
@@ -237,6 +288,8 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         """
         super(AbsSumTransformerDecoderLayer, self).__init__()
 
+        self.num_heads = heads
+
         self.self_attention = nn.MultiheadAttention(d_model, heads, dropout, batch_first=True)
         self.encoder_input_attention = nn.MultiheadAttention(d_model, heads, dropout, batch_first=True)
         self.encoder_signal_attention = nn.MultiheadAttention(d_model, heads, dropout, batch_first=True)
@@ -267,11 +320,17 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         self_attention_mask = torch.gt(target_mask + self.mask, 0)
         target_normalized = self.input_normalization(target_embedded)
 
+        self_attention_mask = self_attention_mask.repeat(self.num_heads, 1, 1)
+        encoder_signal_mask = encoder_signal_mask.repeat(self.num_heads, 1, 1)
+        encoder_input_mask = encoder_input_mask.repeat(self.num_heads, 1, 1)
+
         if previous_target_embedded is not None:
             target = torch.cat([previous_target_embedded, target_normalized])
             self_attention_mask = None
         else:
             target = target_normalized
+
+        # TODO: Expand Masks to Head count
 
         self_attn_out, _ = self.self_attention(target, target, target_normalized, attn_mask=self_attention_mask)  # TODO: Check Mask
         self_attn_out = self.drop(self_attn_out) + target_embedded
@@ -341,7 +400,7 @@ class AbsSumTransformerDecoder(nn.Module):
         Returns:
 
         """
-        batch_size = target.shape.size[0]
+        batch_size = target.shape[0]
 
         #
         # Prepare padding masks for input, signals and target
@@ -349,7 +408,7 @@ class AbsSumTransformerDecoder(nn.Module):
         target_embedded = self.embedding(target)
         target_embedded = self.positional_encoding(target_embedded) # output in orig
 
-        padding_idx = self.embedding.padding_idx # TODO: How is that related to input data?
+        padding_idx = self.embedding.padding_idx
         target_mask = target.data.eq(padding_idx).unsqueeze(1).expand(
             batch_size, self.config.max_target_length, self.config.max_target_length)
 
@@ -481,3 +540,33 @@ class PositionwiseFeedForward(nn.Module):
         inter = self.dropout_1(PositionwiseFeedForward.gelu(self.w_1(self.layer_norm(x))))
         output = self.dropout_2(self.w_2(inter))
         return output + x
+
+
+class LabelSmoothingLoss(nn.Module):
+    """
+    With label smoothing,
+    KL-divergence between q_{smoothed ground truth prob.}(w)
+    and p_{prob. computed by model}(w) is minimized.
+    """
+
+    def __init__(self, label_smoothing, tgt_vocab_size, ignore_index=-100):
+        assert 0.0 < label_smoothing <= 1.0
+        self.padding_idx = ignore_index
+        super(LabelSmoothingLoss, self).__init__()
+
+        smoothing_value = label_smoothing / (tgt_vocab_size - 2)
+        one_hot = torch.full((tgt_vocab_size,), smoothing_value)
+        one_hot[self.padding_idx] = 0
+        self.register_buffer('one_hot', one_hot.unsqueeze(0))
+        self.confidence = 1.0 - label_smoothing
+
+    def forward(self, output, target):
+        """
+        output (FloatTensor): batch_size x n_classes
+        target (LongTensor): batch_size
+        """
+        model_prob = self.one_hot.repeat(target.size(0), 1)
+        model_prob.scatter_(1, target.unsqueeze(1), self.confidence)
+        model_prob.masked_fill_((target == self.padding_idx).unsqueeze(1), 0)
+
+        return F.kl_div(output, model_prob, reduction='sum')

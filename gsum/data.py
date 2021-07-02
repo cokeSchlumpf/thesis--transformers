@@ -1,4 +1,3 @@
-import itertools
 import multiprocessing as mp
 import numpy as np
 import os
@@ -75,17 +74,56 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         # Pre-processes input sequences for prediction
         #
         x_prepared = [preprocess_input_sample(sample, self.lang, self.tokenizer, self.config.max_pos, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
-        dataset = GuidedSummarizationDataset(x_prepared)
+        dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
         return DataLoader(dataset, num_workers=16)
 
-    def prepare_source(self, df: pd.DataFrame) -> List[GuidedSummarizationInput]:
-        return df['text'].progress_apply(lambda s: preprocess_input_sample(s, self.lang, self.tokenizer, self.config.max_pos, self.config.max_input_sentences, self.config.min_sentence_tokens))
+    def prepare_source(self, dataset: str):
+        """
+        Returns a lambda function for parallel processing of source preparation.
+        """
+        def func(params: (int, pd.DataFrame)) -> str:
+            """
+            Processes a batch, stores the result in a file and returns the file path.
+            """
+            batch_idx, df = params
+            path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + batch_idx + '.source.pkl'
+            result = df['text'].progress_apply(lambda s: preprocess_input_sample(s, self.lang, self.tokenizer, self.config.max_pos, self.config.max_input_sentences, self.config.min_sentence_tokens))
+            write_object_to_file(path, result)
+            return path
 
-    def prepare_extractive_target(self, df: pd.DataFrame) -> List[GuidedSummarizationExtractiveTarget]:
-        return [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+        return func
 
-    def prepare_target(self, df: pd.DataFrame) -> List[GuidedSummarizationTarget]:
-        return df['summary'].progress_apply(lambda s: preprocess_output_sample(s, self.lang, self.tokenizer, self.config.max_target_length))
+    def prepare_extractive_target(self, dataset: str):
+        """
+        Returns a lambda function for parallel processing of extractive targets.
+        """
+        def func(params: (int, pd.DataFrame)) -> str:
+            """
+            Processes a batch, stores the result in a file and returns the file path.
+            """
+            batch_idx, df = params
+            path = self.config.data_prepared_path + '/' + dataset + '.prepared.ext.' + batch_idx + '.target.pkl'
+            result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+            write_object_to_file(path, result)
+            return path
+
+        return func
+
+    def prepare_target(self, dataset: str):
+        """
+        Returns a lambda function for parallel processing of abstractive targets.
+        """
+        def func(params: (int, pd.DataFrame)) -> str:
+            """
+            Processes a batch, stores the result in a file and returns the file path.
+            """
+            batch_idx, df = params
+            path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + batch_idx + '.target.pkl'
+            result = df['summary'].progress_apply(lambda s: preprocess_output_sample(s, self.lang, self.tokenizer, self.config.max_target_length))
+            write_object_to_file(path, result)
+            return path
+
+        return func
 
     def __prepare_dataset(self, dataset: str = 'test') -> None:
         print(f'Preparing dataset {dataset} ...')
@@ -107,11 +145,11 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_source_df = pd.read_csv(raw_source_path)
         raw_target_df = pd.read_csv(raw_target_path)
 
-        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:2000]  # TODO: Remove limit for real training.
+        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)[:200]  # TODO: Remove limit for real training.
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
-        batches = np.array_split(raw_data, mp.cpu_count())
+        batches = enumerate(np.array_split(raw_data, mp.cpu_count()))
 
         #
         # Prepare source data
@@ -120,12 +158,14 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if (os.path.isfile(prepared_source_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
             print('> process source data')
             with mp.Pool(8) as p:
-                results = p.map(self.prepare_source, batches)
-                p.join()
+                results = p.map(self.prepare_source(dataset), batches)
 
-            prepared_source = list(itertools.chain.from_iterable(results))
-            print(f'> processed {len(prepared_source)} samples')
-            write_object_to_file(prepared_source_path, prepared_source)
+            prepared_target = []
+            for result in results:
+                prepared_target += read_file_to_object(result)
+
+            print(f'> processed {len(prepared_target)} samples')
+            write_object_to_file(prepared_source_path, prepared_target)
 
         #
         # Prepare target data
@@ -135,10 +175,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             if (os.path.isfile(prepared_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('> process target data')
                 with mp.Pool(8) as p:
-                    results = p.map(self.prepare_target, batches)
-                    p.join()
+                    results = p.map(self.prepare_target(dataset), batches)
 
-                prepared_target = list(itertools.chain.from_iterable(results))
+                prepared_target = []
+                for result in results:
+                    prepared_target += read_file_to_object(result)
+
                 print(f'> processed {len(prepared_target)} samples')
                 write_object_to_file(prepared_target_path, prepared_target)
 
@@ -150,10 +192,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             if (os.path.isfile(prepared_ext_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('> process extractive target data')
                 with mp.Pool(8) as p:
-                    results = p.map(self.prepare_extractive_target, batches)
-                    p.join()
+                    results = p.map(self.prepare_extractive_target(dataset), batches)
 
-                prepared_ext_target = list(itertools.chain.from_iterable(results))
+                prepared_ext_target = []
+                for result in results:
+                    prepared_ext_target += read_file_to_object(result)
+
                 print(f'> processed {len(prepared_ext_target)} samples')
                 write_object_to_file(prepared_ext_target_path, prepared_ext_target)
 
@@ -182,19 +226,19 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if self.test is None:
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
-            return DataLoader(self.test, self.config.batch_sizes[1], num_workers=16)
+            return DataLoader(self.test, self.config.batch_sizes[1], num_workers=0)
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         if self.test is None:
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
-            return DataLoader(self.test, self.config.batch_sizes[1], num_workers=16)
+            return DataLoader(self.test, self.config.batch_sizes[1], num_workers=0)
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         if self.validate is None:
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
-            return DataLoader(self.validate, self.config.batch_sizes[2], num_workers=16)
+            return DataLoader(self.validate, self.config.batch_sizes[2], num_workers=0)
 
     def transfer_batch_to_device(self, batch: Any, device: Optional[torch.device] = None) -> Any:
         batch['x_input']['token_ids'] = batch['x_input']['token_ids'].to(device)

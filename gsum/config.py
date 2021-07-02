@@ -74,4 +74,9 @@ class GuidedSummarizationConfig(BaseModel):
 
     decoder_dropout: float = 0.2
 
+    """
+    Label Smoothing used within loss function during training
+    """
+    label_smoothing: float = 0.1
+
 
