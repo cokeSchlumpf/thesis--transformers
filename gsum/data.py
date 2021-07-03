@@ -34,10 +34,6 @@ class GuidedSummarizationDataset(Dataset):
         return len(self.x_input)
 
     def __getitem__(self, idx):
-        i = 20 * 1233 + idx
-        if len(self.x_input) > i:
-            idx = i
-
         if self.y is not None:
             result = {
                 'x_input': self.x_input[idx].to_dict(),

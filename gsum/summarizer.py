@@ -77,8 +77,7 @@ class GuidedAbsSum(pl.LightningModule):
         loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target.view(-1))
 
         if torch.isnan(loss):
-            print(f"!!!!!!! LOSS BECAME NONE AT STEP {step}, {batch_idx}")
-            print(x_input)
+            raise RuntimeError(f'Loss function returned NaN result in step {step} for batch {batch_idx}')
 
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
