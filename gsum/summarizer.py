@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from torch import nn
 from transformers import AutoModel
-from typing import List
+from typing import Callable, List, Optional
 
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
@@ -50,7 +50,8 @@ class GuidedAbsSum(pl.LightningModule):
         # TODO: Weights initialization?
         #
 
-    def forward(self, *args, **kwargs) -> any:
+    def forward(self, x: List[str]) -> any:
+        self.data_module.preprocess()
         pass
 
     def predict(self, x_input: dict, target: torch.Tensor):
@@ -68,28 +69,62 @@ class GuidedAbsSum(pl.LightningModule):
 
         return output, state
 
-    def shared_step(self, step, batch):
+    def shared_step(self, step, batch, batch_idx):
         x_input = batch['x_input']
         target = batch['y']['token_ids']
-        y = batch['y']
         dec_out, state = self.predict(x_input, target)
 
         loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target.view(-1))
+
+        if torch.isnan(loss):
+            print(f"!!!!!!! LOSS BECAME NONE AT STEP {step}, {batch_idx}")
+            print(x_input)
+
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
 
-    def training_step(self, batch, batch_idx):
-        return self.shared_step('train', batch)
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        return self.shared_step('train', batch, batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        return self.shared_step('val', batch)
+        return self.shared_step('val', batch, batch_idx)
 
     def test_step(self, batch, batch_idx):
-        return self.shared_step('test', batch)
+        return self.shared_step('test', batch, batch_idx)
 
     def configure_optimizers(self):
-        # TOOD: Configure optimizer // sep optimizers / schedules BERT and remaining layers.
-        return torch.optim.Adam(self.parameters(), lr=0.0002)
+        enc_params = [param for name, param in self.named_parameters() if name.startswith('enc.bert')]
+        enc_optim = torch.optim.Adam(enc_params, self.config.encoder_optim_lr, self.config.encoder_optim_beta, self.config.encoder_optim_eps)
+
+        dec_params = [param for name, param in self.named_parameters() if not name.startswith('enc.bert')]
+        dec_optim = torch.optim.Adam(dec_params, self.config.decoder_optim_lr, self.config.decoder_optim_beta, self.config.decoder_optim_eps)
+
+        return [enc_optim, dec_optim]
+
+    def optimizer_step(
+        self,
+        epoch: int = None,
+        batch_idx: int = None,
+        optimizer: torch.optim.Optimizer = None,
+        optimizer_idx: int = None,
+        optimizer_closure: Optional[Callable] = None,
+        on_tpu: bool = None,
+        using_native_amp: bool = None,
+        using_lbfgs: bool = None) -> None:
+
+        if optimizer_idx == 0:
+            lr = self.config.encoder_optim_lr
+            warmup = self.config.encoder_optim_warmup_steps
+        else:
+            lr = self.config.decoder_optim_lr
+            warmup = self.config.decoder_optim_warmup_steps
+
+        lr = lr * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+
+        for pg in optimizer.param_groups:
+            pg['lr'] = lr
+
+        optimizer.step(closure=optimizer_closure)
 
 
 class GuidedExtSum(pl.LightningModule):
@@ -162,7 +197,7 @@ class GuidedExtSum(pl.LightningModule):
         return self.shared_step('test', batch)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.0002)
+        return torch.optim.Adam(self.parameters(), lr=0.00002)
 
 
 #
@@ -220,14 +255,14 @@ class AbsSumTransformerEncoder(nn.Module):
         super(AbsSumTransformerEncoder, self).__init__()
         self.bert = AutoModel.from_pretrained(config.base_model_name)
 
-        if config.max_pos > 512:
+        if config.max_input_length > 512:
             """
             If maximum sequence length is longer than BERT's default max sequence length,
             then we need to extend the positional embeddings layer of the model.
             """
-            my_pos_embeddings = nn.Embedding(config.max_pos, self.bert.config.hidden_size)
+            my_pos_embeddings = nn.Embedding(config.max_input_length, self.bert.config.hidden_size)
             my_pos_embeddings.weight.data[:512] = self.bert.embeddings.position_embeddings.weight.data
-            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_pos - 512, 1)
+            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_input_length - 512, 1)
             self.bert.embeddings.position_embeddings = my_pos_embeddings
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
@@ -372,7 +407,6 @@ class AbsSumTransformerDecoder(nn.Module):
         :param d_ff: Dimensions of the inner FF layer.
         :param dropout: Dropout value for dropout layers.
         :param embedding: Embedding with copied weights from BERT's embedding layer; Should be equal to embedding layer of encoder.
-            TODO: Can't I use the whole BERT language model to encode target sequence?
         :param vocab_size: The size of the tokenizers vocabulary.
         """
         super(AbsSumTransformerDecoder, self).__init__()
@@ -413,7 +447,7 @@ class AbsSumTransformerDecoder(nn.Module):
             batch_size, self.config.max_target_length, self.config.max_target_length)
 
         encoder_input_mask = state.encoder_input_source.data.eq(padding_idx).unsqueeze(1).expand(
-            batch_size, self.config.max_target_length, self.config.max_pos)
+            batch_size, self.config.max_target_length, self.config.max_input_length)
 
         encoder_signal_mask = state.encoder_input_signal.data.eq(padding_idx).unsqueeze(1).expand(
             batch_size, self.config.max_target_length, self.config.max_input_signal_length)
@@ -426,7 +460,7 @@ class AbsSumTransformerDecoder(nn.Module):
 
         for i in range(self.num_layers):
             if state.previous_input is not None:
-                prev_lay_input = state.previous_layer_inputs[i]  # TODO: How to be sure, that i exists?
+                prev_lay_input = state.previous_layer_inputs[i]
             else:
                 prev_lay_input = None
 
@@ -434,7 +468,7 @@ class AbsSumTransformerDecoder(nn.Module):
                 output, encoder_input_context, encoder_signal_context,
                 target_mask, encoder_input_mask, encoder_signal_mask, prev_lay_input)
 
-            saved_inputs.append(all_input)  # TODO: What is all input?
+            saved_inputs.append(all_input)
 
         output = self.ff(output)
 

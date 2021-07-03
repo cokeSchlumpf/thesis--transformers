@@ -1,16 +1,22 @@
 from pydantic import BaseModel
 
-from typing import List
+from typing import Tuple
 
 
 class GuidedSummarizationConfig(BaseModel):
+
+    """
+    Indicates whether executing in debug mode, if true, GPU will be disabled an data loaders are not working
+    parallelized to avoid issues with PyCharm debugger.
+    """
+    is_debug: bool = False
 
     """
     Data configuration
     """
     data_raw_path: str = './data/raw/cnn_dailymail'
 
-    data_prepared_path: str = './data/prepared/cnn_dailymail'
+    data_prepared_path: str = './data/prepared/cnn_dailymail_complete'
 
     """
     Pre-preprocessing configuration
@@ -20,7 +26,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Training batch sizes (training, test, validation)
     """
-    batch_sizes: List[int] = [20, 20, 20]
+    batch_sizes: Tuple[int, int, int] = (20, 20, 20)
 
     """
     The name of the huggingface transformer base model.
@@ -30,7 +36,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length (token count) for input sequences.
     """
-    max_pos: int = 256
+    max_input_length: int = 256
 
     """
     The maximum length (token count) for target sequences.
@@ -79,4 +85,24 @@ class GuidedSummarizationConfig(BaseModel):
     """
     label_smoothing: float = 0.1
 
+    """
+    Encoder Optimizer Settings
+    """
+    encoder_optim_lr: float = 2e-3
 
+    encoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
+
+    encoder_optim_warmup_steps: int = 20000
+
+    encoder_optim_eps: float = 1e-9
+
+    """
+    Decoder Optimizer Settings
+    """
+    decoder_optim_lr: float = 0.1
+
+    decoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
+
+    decoder_optim_warmup_steps: int = 10000
+
+    decoder_optim_eps: float = 1e-9
