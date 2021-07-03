@@ -50,9 +50,22 @@ class GuidedAbsSum(pl.LightningModule):
         # TODO: Weights initialization?
         #
 
-    def forward(self, x: List[str]) -> any:
-        self.data_module.preprocess()
-        pass
+    def forward(self, x: List[str]) -> List[str]:
+        x_prepared = self.data_module.preprocess(x)
+        return [self.infer(i['x_input']) for i in x_prepared]
+
+    def infer(self, x_input: dict) -> str:
+        self.enc.to(self.device)
+        self.dec.to(self.device)
+        self.gen.to(self.device)
+
+        top_vec, gui_vec = self.enc(x_input)
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
+        target = self.data_module.initial_target().resize(1, 256)
+
+        dec_out, state = self.dec(target, top_vec, gui_vec, state)
+        output = self.gen(dec_out)
+        return ""
 
     def predict(self, x_input: dict, target: torch.Tensor):
         """
@@ -74,7 +87,10 @@ class GuidedAbsSum(pl.LightningModule):
         target = batch['y']['token_ids']
         dec_out, state = self.predict(x_input, target)
 
-        loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target.view(-1))
+        target_shifted = target.roll(-1, 1)
+        target_shifted[:, target_shifted.shape[1] - 1] = 0
+
+        loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target_shifted.view(-1))
 
         if torch.isnan(loss):
             raise RuntimeError(f'Loss function returned NaN result in step {step} for batch {batch_idx}')

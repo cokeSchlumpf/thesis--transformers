@@ -88,21 +88,21 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Encoder Optimizer Settings
     """
-    encoder_optim_lr: float = 2e-3
+    encoder_optim_lr: float = 2e-3 / 5
 
     encoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    encoder_optim_warmup_steps: int = 20000
+    encoder_optim_warmup_steps: int = 20000 * 5
 
     encoder_optim_eps: float = 1e-9
 
     """
     Decoder Optimizer Settings
     """
-    decoder_optim_lr: float = 0.1
+    decoder_optim_lr: float = 0.1 / 5
 
     decoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    decoder_optim_warmup_steps: int = 10000
+    decoder_optim_warmup_steps: int = 10000 * 5
 
     decoder_optim_eps: float = 1e-9

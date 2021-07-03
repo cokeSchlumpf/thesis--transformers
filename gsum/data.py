@@ -75,7 +75,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         #
         x_prepared = [preprocess_input_sample(sample, self.lang, self.tokenizer, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
         dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
-        return DataLoader(dataset, num_workers=0 if self.config.is_debug else mp.cpu_count())
+        return DataLoader(dataset, num_workers=0)
+
+    def initial_target(self) -> torch.Tensor:
+        t = preprocess_output_sample('', self.lang, self.tokenizer, self.config.max_target_length)
+        t.token_ids[1] = self.tokenizer.pad_token_id
+        return t.token_ids
 
     def prepare_source(self, params: (str, int, pd.DataFrame)) -> str:
         """
@@ -132,7 +137,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_source_df = pd.read_csv(raw_source_path)
         raw_target_df = pd.read_csv(raw_target_path)
 
-        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)[:200]  # TODO: Remove limit for real training.
+        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]  # TODO: Remove limit for real training.
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
