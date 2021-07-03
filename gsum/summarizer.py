@@ -394,7 +394,7 @@ class AbsSumTransformerDecoderLayer(nn.Module):
 
 class AbsSumTransformerDecoder(nn.Module):
 
-    def __init__(self, config: GuidedSummarizationConfig,num_layers: int, d_model: int, heads: int, d_ff: int,
+    def __init__(self, config: GuidedSummarizationConfig, num_layers: int, d_model: int, heads: int, d_ff: int,
                  dropout: float, embedding: nn.Embedding, vocab_size: int):
         """
         The decoder building block for guided summarization.
@@ -439,7 +439,7 @@ class AbsSumTransformerDecoder(nn.Module):
         # Prepare padding masks for input, signals and target
         #
         target_embedded = self.embedding(target)
-        target_embedded = self.positional_encoding(target_embedded) # output in orig
+        target_embedded = self.positional_encoding(target_embedded)
 
         padding_idx = self.embedding.padding_idx
         target_mask = target.data.eq(padding_idx).unsqueeze(1).expand(
@@ -579,7 +579,7 @@ class LabelSmoothingLoss(nn.Module):
     """
     With label smoothing,
     KL-divergence between q_{smoothed ground truth prob.}(w)
-    and p_{prob. computed by model}(w) is minimized.
+    and: p_{prob. computed by model}(w) is minimized.
     """
 
     def __init__(self, label_smoothing, tgt_vocab_size, ignore_index=-100):
