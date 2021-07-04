@@ -40,9 +40,11 @@ def run_abstractive():
     dat = GuidedSummarizationDataModule(cfg)
     mdl = GuidedAbsSum(cfg, dat)
 
+    training_path = f'./data/trained/{date_time}'
+
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
-        dirpath=f'./data/trained/{date_time}',
+        dirpath=training_path,
         filename='gsum-abs-{epoch:02d}-{val_loss:.2f}',
         save_top_k=3,
         mode='min',
@@ -51,7 +53,8 @@ def run_abstractive():
     trainer = pl.Trainer(
         gpus=0 if cfg.is_debug else 1,
         max_epochs=5,
-        default_root_dir='./data/trained/2021-07-03-2327/gsum-abs-epoch=00-val_loss=1533.46.ckpt',
+        default_root_dir=training_path,
+        val_check_interval=0.25,
         callbacks=[checkpoint_callback])
 
     trainer.fit(mdl, dat)

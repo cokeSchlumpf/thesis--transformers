@@ -394,7 +394,7 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         #
         # Self Attention
         #
-        self_attention_mask = torch.gt(target_mask + self.mask, 0)
+        self_attention_mask = torch.gt(target_mask + self.mask, 0)  # TODO: Shouldn't I ignore self.mask for inference time?
         target_normalized = self.input_normalization(target_embedded)
 
         self_attention_mask = self_attention_mask.repeat(self.num_heads, 1, 1)

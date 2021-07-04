@@ -92,7 +92,7 @@ class GuidedSummarizationConfig(BaseModel):
 
     encoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    encoder_optim_warmup_steps: int = 20000
+    encoder_optim_warmup_steps: int = 20000 * 7
 
     encoder_optim_eps: float = 1e-9
 
@@ -103,7 +103,7 @@ class GuidedSummarizationConfig(BaseModel):
 
     decoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    decoder_optim_warmup_steps: int = 10000
+    decoder_optim_warmup_steps: int = 10000 * 7
 
     decoder_optim_eps: float = 1e-9
 
