@@ -77,11 +77,6 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
         return DataLoader(dataset, num_workers=0)
 
-    def initial_target(self) -> torch.Tensor:
-        t = preprocess_output_sample('', self.lang, self.tokenizer, self.config.max_target_length)
-        t.token_ids[1] = self.tokenizer.pad_token_id
-        return t.token_ids
-
     def prepare_source(self, params: (str, int, pd.DataFrame)) -> str:
         """
         Processes a batch, stores the result in a file and returns the file path.

@@ -1,4 +1,5 @@
 import copy
+import functools
 import math
 import numpy as np
 import pytorch_lightning as pl
@@ -12,6 +13,7 @@ from typing import Callable, List, Optional
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
 
+from .preprocess import TARGET_BOS, TARGET_EOS, TARGET_SEP
 
 #
 # Lightning modules
@@ -60,12 +62,37 @@ class GuidedAbsSum(pl.LightningModule):
         self.gen.to(self.device)
 
         top_vec, gui_vec = self.enc(x_input)
-        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
-        target = self.data_module.initial_target().resize(1, 256)
+        results: List[BeamSearchResult] = [BeamSearchResult.create(self.data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, self.config.max_target_length)]
 
-        dec_out, state = self.dec(target, top_vec, gui_vec, state)
-        output = self.gen(dec_out)
-        return ""
+        for _ in range(self.config.max_target_length):
+            results = self.infer_iteration(top_vec, gui_vec, x_input, results)
+
+        return results[0].text()
+
+    def infer_iteration(self, top_vec: torch.Tensor, gui_vec: torch.Tensor, x_input: dict, results: List['BeamSearchResult']):
+        results_next: List[BeamSearchResult] = []
+
+        for result in results:
+            if result.is_eos():
+                results_next.append(result)
+            else:
+                target = result.token_ids.reshape(1, self.config.max_target_length)
+                state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
+                dec_out, state = self.dec(target, top_vec, gui_vec, state)
+                output = self.gen(dec_out)
+
+                top_k = torch.topk(output[0, result.length() - 1], k=self.config.beam_k)
+                probs = torch.exp(top_k.values)
+                token_ids = top_k.indices
+                tokens = self.data_module.tokenizer.convert_ids_to_tokens(token_ids)
+
+                for i in range(self.config.beam_k):
+                    results_next.append(result.append(token_ids[i], tokens[i], probs[i]))
+
+        results_next = sorted(results_next, key=lambda r: r.beam_prob(self.config.beam_alpha, self.config.beam_m), reverse=True)
+        results_next = list(filter(lambda r: not r.is_eos() or r.length() > 3, results_next))
+        results_next = results_next[:self.config.beam_k]
+        return results_next
 
     def predict(self, x_input: dict, target: torch.Tensor):
         """
@@ -619,3 +646,42 @@ class LabelSmoothingLoss(nn.Module):
         model_prob.masked_fill_((target == self.padding_idx).unsqueeze(1), 0)
 
         return F.kl_div(output, model_prob, reduction='sum')
+
+
+class BeamSearchResult:
+
+    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float]):
+        self.token_ids = token_ids
+        self.tokens = tokens
+        self.probs = probs
+
+    @staticmethod
+    def create(token_id: int, token: str, prob: float, input_length: int) -> 'BeamSearchResult':
+        token_ids = torch.zeros(input_length).type(torch.IntTensor)
+        token_ids[0] = token_id
+        return BeamSearchResult(token_ids, [token], [prob])
+
+    def prob(self, m: int) -> float:
+        return functools.reduce(lambda p1, p2: p1 * p2, self.probs[-m:])
+
+    def beam_prob(self, alpha: float, m: int) -> float:
+        return np.log(self.prob(m)) * (1/(self.length() ** alpha))
+
+    def text(self) -> str:
+        # TODO filter/ transform
+        return ' '.join(self.tokens)
+
+    def append(self, token_id: int, token: str, prob: float) -> 'BeamSearchResult':
+        token_ids = self.token_ids
+        token_ids[len(token)] = token_id
+
+        return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob])
+
+    def is_eos(self) -> bool:
+        return self.tokens[self.length() - 1] == TARGET_EOS
+
+    def length(self) -> int:
+        return len(self.tokens)
+
+    def __str__(self):
+        return f'BeamSearchResult(`{self.text()})'

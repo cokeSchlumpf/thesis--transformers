@@ -51,7 +51,7 @@ def run_abstractive():
     trainer = pl.Trainer(
         gpus=0 if cfg.is_debug else 1,
         max_epochs=5,
-        default_root_dir='./data/checkpoints',
+        default_root_dir='./data/trained/2021-07-03-2327/gsum-abs-epoch=00-val_loss=1533.46.ckpt',
         callbacks=[checkpoint_callback])
 
     trainer.fit(mdl, dat)
@@ -60,7 +60,7 @@ def run_abstractive():
 
 
 def run_test():
-    checkpoint_path = './data/trained/2021-07-03-1755/gsum-abs-epoch=01-val_loss=123.54.ckpt'
+    checkpoint_path = './data/trained/2021-07-03-2327/gsum-abs-epoch=00-val_loss=1533.46.ckpt'
 
     cfg = GuidedSummarizationConfig()
     dat = GuidedSummarizationDataModule(cfg)
