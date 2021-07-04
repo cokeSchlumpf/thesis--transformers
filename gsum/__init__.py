@@ -55,6 +55,7 @@ def run_abstractive():
         max_epochs=5,
         default_root_dir=training_path,
         val_check_interval=0.25,
+        accumulate_grad_batches=10,
         callbacks=[checkpoint_callback])
 
     trainer.fit(mdl, dat)
@@ -63,7 +64,7 @@ def run_abstractive():
 
 
 def run_test():
-    checkpoint_path = './data/trained/2021-07-03-2327/gsum-abs-epoch=00-val_loss=1533.46.ckpt'
+    checkpoint_path = './data/trained/2021-07-04-1318/gsum-abs-epoch=02-val_loss=191.75.ckpt'
 
     cfg = GuidedSummarizationConfig()
     dat = GuidedSummarizationDataModule(cfg)

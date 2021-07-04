@@ -47,7 +47,6 @@ class GuidedAbsSum(pl.LightningModule):
 
         self.loss_func = LabelSmoothingLoss(cfg.label_smoothing, self.enc.bert.config.vocab_size, 0)
 
-        pass
         #
         # TODO: Weights initialization?
         #
@@ -90,7 +89,7 @@ class GuidedAbsSum(pl.LightningModule):
                     results_next.append(result.append(token_ids[i], tokens[i], probs[i]))
 
         results_next = sorted(results_next, key=lambda r: r.beam_prob(self.config.beam_alpha, self.config.beam_m), reverse=True)
-        results_next = list(filter(lambda r: not r.is_eos() or r.length() > 3, results_next))
+        results_next = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating(), results_next))
         results_next = results_next[:self.config.beam_k]
         return results_next
 
@@ -678,7 +677,15 @@ class BeamSearchResult:
         return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob])
 
     def is_eos(self) -> bool:
-        return self.tokens[self.length() - 1] == TARGET_EOS
+        return self.tokens[-1] == TARGET_EOS
+
+    def is_repeating(self) -> bool:
+        if self.length() <= 1:
+            return False
+        else:
+            return (self.tokens[-1] == self.tokens[-2]) or \
+                   (self.length() >= 4 and self.tokens[-1] == self.tokens[-3] and self.tokens[-2] == self.tokens[-4]) or \
+                   (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and self.tokens[-3] == self.tokens[-6])
 
     def length(self) -> int:
         return len(self.tokens)

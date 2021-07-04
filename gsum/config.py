@@ -16,7 +16,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     data_raw_path: str = './data/raw/cnn_dailymail'
 
-    data_prepared_path: str = './data/prepared/cnn_dailymail_complete'
+    data_prepared_path: str = './data/prepared/cnn_dailymail'
 
     """
     Pre-preprocessing configuration
@@ -27,6 +27,11 @@ class GuidedSummarizationConfig(BaseModel):
     Training batch sizes (training, test, validation)
     """
     batch_sizes: Tuple[int, int, int] = (20, 20, 20)
+
+    """
+    Number of batches to accumulate during training.
+    """
+    accumulate_grad_batches: int = 10
 
     """
     The name of the huggingface transformer base model.
@@ -110,7 +115,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Beam Search configuration
     """
-    beam_k: int = 3
+    beam_k: int = 10
 
     beam_alpha: float = 0.75
 
