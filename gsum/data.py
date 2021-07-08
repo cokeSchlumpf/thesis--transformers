@@ -77,6 +77,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
         return DataLoader(dataset, num_workers=0)
 
+    def preprocess_target(self, x: List[str]) -> DataLoader:
+        y = [preprocess_output_sample(sample, self.lang, self.tokenizer, self.config.max_target_length) for sample in x]
+        x_prepared = [preprocess_input_sample(sample, self.lang, self.tokenizer, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
+        dataset = GuidedSummarizationDataset(x_prepared, x_prepared, y)
+        return DataLoader(dataset, num_workers=0)
+
     def prepare_source(self, params: (str, int, pd.DataFrame)) -> str:
         """
         Processes a batch, stores the result in a file and returns the file path.

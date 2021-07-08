@@ -13,7 +13,8 @@ from typing import Callable, List, Optional
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
 
-from .preprocess import TARGET_BOS, TARGET_EOS, TARGET_SEP
+from .preprocess import TARGET_BOS, TARGET_EOS
+
 
 #
 # Lightning modules
@@ -75,7 +76,14 @@ class GuidedAbsSum(pl.LightningModule):
             if result.is_eos():
                 results_next.append(result)
             else:
+
+                target = self.data_module.preprocess_target(["""Accident happens"""])  # in Santa Ynez, California, near where Crosby lives . The jogger suffered multiple fractures; his injuries are not believed to be life-threatening ."""]) #  result.token_ids.reshape(1, self.config.max_target_length)
+                target = [t for t in target]
+                target = target[0]['y']['token_ids']
+
+                '''
                 target = result.token_ids.reshape(1, self.config.max_target_length)
+                '''
                 state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
                 dec_out, state = self.dec(target, top_vec, gui_vec, state)
                 output = self.gen(dec_out)
@@ -161,6 +169,8 @@ class GuidedAbsSum(pl.LightningModule):
             warmup = self.config.decoder_optim_warmup_steps
 
         lr = lr * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+
+        self.log(f'opt_{optimizer_idx}_lr', lr, True)
 
         for pg in optimizer.param_groups:
             pg['lr'] = lr
@@ -328,6 +338,8 @@ class AbsSumTransformerEncoder(nn.Module):
         input_vec = self.input_transformer_encoder(input_vec['last_hidden_state'], src_key_padding_mask=(1 - x_input['attention_mask']).bool())
         """
         TODO: Implement guidance signal
+        """
+        """
         guidance_vec = self.bert(**x_guidance)
         guidance_vec = self.guidance_transformer_encoder(guidance_vec, 1 - x_guidance['attention_mask'])
         """
@@ -393,12 +405,12 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         #
         # Self Attention
         #
-        self_attention_mask = torch.gt(target_mask + self.mask, 0)  # TODO: Shouldn't I ignore self.mask for inference time?
+        self_attention_mask = torch.gt(target_mask + self.mask, 0)
         target_normalized = self.input_normalization(target_embedded)
 
-        self_attention_mask = self_attention_mask.repeat(self.num_heads, 1, 1)
-        encoder_signal_mask = encoder_signal_mask.repeat(self.num_heads, 1, 1)
-        encoder_input_mask = encoder_input_mask.repeat(self.num_heads, 1, 1)
+        self_attention_mask = torch.repeat_interleave(self_attention_mask, self.num_heads, dim=0)
+        encoder_signal_mask = torch.repeat_interleave(encoder_signal_mask, self.num_heads, dim=0)
+        encoder_input_mask = torch.repeat_interleave(encoder_input_mask, self.num_heads, dim=0)
 
         if previous_target_embedded is not None:
             target = torch.cat([previous_target_embedded, target_normalized])
@@ -406,10 +418,8 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         else:
             target = target_normalized
 
-        # TODO: Expand Masks to Head count
-
-        self_attn_out, _ = self.self_attention(target, target, target_normalized, attn_mask=self_attention_mask)  # TODO: Check Mask
-        self_attn_out = self.drop(self_attn_out) + target_embedded
+        self_attn_out, _ = self.self_attention(target, target, target_normalized, attn_mask=self_attention_mask)
+        self_attn_out = self.drop(self_attn_out)  # + target_embedded
 
         #
         # Signal Context Cross Attention
@@ -661,7 +671,7 @@ class BeamSearchResult:
         return BeamSearchResult(token_ids, [token], [prob])
 
     def prob(self, m: int) -> float:
-        return functools.reduce(lambda p1, p2: p1 * p2, self.probs[-m:])
+        return functools.reduce(lambda p1, p2: p1 * p2, self.probs)
 
     def beam_prob(self, alpha: float, m: int) -> float:
         return np.log(self.prob(m)) * (1/(self.length() ** alpha))
@@ -671,8 +681,8 @@ class BeamSearchResult:
         return ' '.join(self.tokens)
 
     def append(self, token_id: int, token: str, prob: float) -> 'BeamSearchResult':
-        token_ids = self.token_ids
-        token_ids[len(token)] = token_id
+        token_ids = self.token_ids.detach().clone()
+        token_ids[len(self.tokens)] = token_id
 
         return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob])
 
