@@ -76,14 +76,14 @@ class GuidedAbsSum(pl.LightningModule):
             if result.is_eos():
                 results_next.append(result)
             else:
-
+                '''
                 target = self.data_module.preprocess_target(["""Accident happens"""])  # in Santa Ynez, California, near where Crosby lives . The jogger suffered multiple fractures; his injuries are not believed to be life-threatening ."""]) #  result.token_ids.reshape(1, self.config.max_target_length)
                 target = [t for t in target]
                 target = target[0]['y']['token_ids']
+                '''
 
-                '''
                 target = result.token_ids.reshape(1, self.config.max_target_length)
-                '''
+
                 state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
                 dec_out, state = self.dec(target, top_vec, gui_vec, state)
                 output = self.gen(dec_out)
@@ -418,16 +418,16 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         else:
             target = target_normalized
 
-        self_attn_out, _ = self.self_attention(target, target, target_normalized, attn_mask=self_attention_mask)
-        self_attn_out = self.drop(self_attn_out)  # + target_embedded
+        self_attn_out, _ = self.self_attention(target_normalized, target, target, attn_mask=self_attention_mask)
+        self_attn_out = self.drop(self_attn_out) + target_embedded
 
         #
         # Signal Context Cross Attention
         #
         signal_attn_query_normalized = self.query_normalization(self_attn_out)
-        signal_attn_out, _ = self.encoder_signal_attention(encoder_signal_context,
+        signal_attn_out, _ = self.encoder_signal_attention(signal_attn_query_normalized,
                                                            encoder_signal_context,
-                                                           signal_attn_query_normalized,
+                                                           encoder_signal_context,
                                                            attn_mask=encoder_signal_mask)
         signal_attn_out = self.drop(signal_attn_out) + self_attn_out
 
@@ -435,9 +435,9 @@ class AbsSumTransformerDecoderLayer(nn.Module):
         # Input Context Cross Attention
         #
         input_attn_query_normalized = self.query_normalization(signal_attn_out)
-        input_attn_out, _ = self.encoder_input_attention(encoder_input_context,
+        input_attn_out, _ = self.encoder_input_attention(input_attn_query_normalized,
                                                          encoder_input_context,
-                                                         input_attn_query_normalized,
+                                                         encoder_input_context,
                                                          attn_mask=encoder_input_mask)
         input_attn_out = self.drop(input_attn_out) + signal_attn_out
 

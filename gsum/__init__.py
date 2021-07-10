@@ -64,7 +64,7 @@ def run_abstractive():
 
 
 def run_test():
-    checkpoint_path = './data/trained/2021-07-06-2305/gsum-abs-epoch=04-val_loss=107.72.ckpt'
+    checkpoint_path = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt'
 
     cfg = GuidedSummarizationConfig()
     dat = GuidedSummarizationDataModule(cfg)
