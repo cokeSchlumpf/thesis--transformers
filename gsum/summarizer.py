@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 from torch import nn
 from transformers import AutoModel
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
@@ -54,7 +54,7 @@ class GuidedAbsSum(pl.LightningModule):
         # TODO: Weights initialization?
         #
 
-    def forward(self, x: List[str]) -> List['BeamSearchResult']:
+    def forward(self, x: List[str]) -> Tuple[List['BeamSearchResult'], float]:
         self.enc.to(self.device)
         self.dec.to(self.device)
         self.gen.to(self.device)
@@ -145,8 +145,7 @@ class GuidedAbsSum(pl.LightningModule):
                 s.sort_and_clean()
 
         end = time.time()
-        print(end - start)
-        return [s.results[0] for s in beam_search]
+        return [s.results[0] for s in beam_search], end - start
 
     def predict(self, x_input: dict, target: torch.Tensor):
         """
@@ -730,10 +729,13 @@ class BeamSearchState:
 
 class BeamSearchResult:
 
-    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float]):
+    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float], prob_cache: Optional[float] = None):
         self.token_ids = token_ids
         self.tokens = tokens
         self.probs = probs
+
+        self.prob_cache = prob_cache
+        self.beam_prob_cache = None
 
     @staticmethod
     def create(token_id: int, token: str, prob: float, input_length: int) -> 'BeamSearchResult':
@@ -742,10 +744,16 @@ class BeamSearchResult:
         return BeamSearchResult(token_ids, [token], [prob])
 
     def prob(self) -> float:
-        return functools.reduce(lambda p1, p2: p1 * p2, self.probs)
+        if self.prob_cache is None:
+            self.prob_cache = functools.reduce(lambda p1, p2: p1 * p2, self.probs)
+
+        return self.prob_cache
 
     def beam_prob(self, alpha: float) -> float:
-        return np.log(self.prob()) * (1/(self.length() ** alpha))
+        if self.beam_prob_cache is None:
+            self.beam_prob_cache = np.log(self.prob()) * (1/(self.length() ** alpha))
+
+        return self.beam_prob_cache
 
     def text(self) -> str:
         cleaned = filter(lambda t: t != TARGET_SEP and t != TARGET_BOS and t != TARGET_EOS, self.tokens)
@@ -757,7 +765,7 @@ class BeamSearchResult:
         token_ids = self.token_ids.detach().clone()
         token_ids[len(self.tokens)] = token_id
 
-        return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob])
+        return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob], self.prob() * prob)
 
     def is_eos(self) -> bool:
         return self.tokens[-1] == TARGET_EOS

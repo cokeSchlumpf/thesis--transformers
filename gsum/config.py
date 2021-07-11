@@ -24,9 +24,9 @@ class GuidedSummarizationConfig(BaseModel):
     spacy_model: str = 'en_core_web_sm'
 
     """
-    Training batch sizes (training, test, validation)
+    Training batch sizes (training, test, validation, inference)
     """
-    batch_sizes: Tuple[int, int, int] = (20, 20, 20)
+    batch_sizes: Tuple[int, int, int, int] = (20, 20, 25, 6)
 
     """
     Number of batches to accumulate during training.
@@ -118,5 +118,3 @@ class GuidedSummarizationConfig(BaseModel):
     beam_k: int = 3
 
     beam_alpha: float = 0.75
-
-    beam_m: int = 5

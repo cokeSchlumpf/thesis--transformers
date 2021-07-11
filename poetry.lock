@@ -1296,6 +1296,20 @@ requests = ">=2.0.0"
 rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
 [[package]]
+name = "rouge-score"
+version = "0.0.4"
+description = "Pure python implementation of ROUGE-1.5.5."
+category = "main"
+optional = false
+python-versions = ">=2.7"
+
+[package.dependencies]
+absl-py = "*"
+nltk = "*"
+numpy = "*"
+six = ">=1.14.0"
+
+[[package]]
 name = "rsa"
 version = "4.7.2"
 description = "Pure-Python RSA implementation"
@@ -1863,7 +1877,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "a6aada99e01c1d1176ae39f95bb491d32bb4852d88137696f6e0199f35998b75"
+content-hash = "4ceb6c718d4225d03618f05634f85f2d812960be3e2ce66749228057ce354494"
 
 [metadata.files]
 absl-py = [
@@ -2850,6 +2864,10 @@ requests-oauthlib = [
     {file = "requests-oauthlib-1.3.0.tar.gz", hash = "sha256:b4261601a71fd721a8bd6d7aa1cc1d6a8a93b4a9f5e96626f8e4d91e8beeaa6a"},
     {file = "requests_oauthlib-1.3.0-py2.py3-none-any.whl", hash = "sha256:7f71572defaecd16372f9006f33c2ec8c077c3cfa6f5911a9a90202beb513f3d"},
     {file = "requests_oauthlib-1.3.0-py3.7.egg", hash = "sha256:fa6c47b933f01060936d87ae9327fead68768b69c6c9ea2109c48be30f2d4dbc"},
+]
+rouge-score = [
+    {file = "rouge_score-0.0.4-py2.py3-none-any.whl", hash = "sha256:b57fd8a3589a392f1bb43a31788a46269102c84849564277761826b91f4d07d5"},
+    {file = "rouge_score-0.0.4.tar.gz", hash = "sha256:68f75b8780a38683b49cfc35d8392e267682d116ccdf4c2161669c6ff9d4a501"},
 ]
 rsa = [
     {file = "rsa-4.7.2-py3-none-any.whl", hash = "sha256:78f9a9bf4e7be0c5ded4583326e7461e3a3c5aae24073648b4bdfa797d78c9d2"},

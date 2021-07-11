@@ -8,7 +8,6 @@ import torch
 
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.dataset import T_co
 from transformers import AutoTokenizer
 from tqdm import tqdm
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -296,7 +295,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         sources = [row['text'] for _, row in raw_data.iterrows()]
         references = [row['summary'] for _, row in raw_data.iterrows()]
 
-        return DataLoader(SummaryDataset(sources, references), batch_size=self.config.batch_sizes[2], num_workers=0, shuffle=shuffle)
+        return DataLoader(SummaryDataset(sources, references), batch_size=self.config.batch_sizes[3], num_workers=0, shuffle=shuffle)
 
     def transfer_batch_to_device(self, batch: Any, device: Optional[torch.device] = None) -> Any:
         batch['x_input']['token_ids'] = batch['x_input']['token_ids'].to(device)
