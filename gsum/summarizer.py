@@ -729,13 +729,14 @@ class BeamSearchState:
 
 class BeamSearchResult:
 
-    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float], prob_cache: Optional[float] = None):
+    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float], prob_cache: Optional[float] = None, max_length: int = 256):
         self.token_ids = token_ids
         self.tokens = tokens
         self.probs = probs
 
         self.prob_cache = prob_cache
         self.beam_prob_cache = None
+        self.max_length = 256
 
     @staticmethod
     def create(token_id: int, token: str, prob: float, input_length: int) -> 'BeamSearchResult':
@@ -768,7 +769,7 @@ class BeamSearchResult:
         return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob], self.prob() * prob)
 
     def is_eos(self) -> bool:
-        return self.tokens[-1] == TARGET_EOS
+        return self.tokens[-1] == TARGET_EOS or len(self.tokens) >= self.max_length
 
     def is_repeating(self) -> bool:
         if self.length() <= 1:

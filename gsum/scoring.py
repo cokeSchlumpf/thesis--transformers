@@ -11,7 +11,7 @@ from .summarizer import GuidedAbsSum
 
 def run_scoring(
         checkpoint_path: str = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt',
-        max_samples: int = 40):
+        max_samples: int = 900):
     """
     Executes inference with model from checkpoint.
     Args:
