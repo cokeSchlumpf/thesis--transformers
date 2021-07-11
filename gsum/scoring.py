@@ -1,4 +1,5 @@
 import pandas as pd
+import torch
 
 from lib.utils import read_file_to_object, write_object_to_file
 from pathlib import Path
@@ -13,13 +14,10 @@ def run_scoring(
         checkpoint_path: str = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt',
         max_samples: int = 900):
     """
-    Executes inference with model from checkpoint.
-    Args:
-        checkpoint_path:
-        max_samples:
+    Executes inference with model from a given checkpoint.
 
-    Returns:
-
+    :param checkpoint_path The model/ checkpoint to be used to run inference.
+    :param max_samples The amount of samples to be inferred (might be less, if data loader does not have enough samples)
     """
 
     checkpoint_path = Path(checkpoint_path)
@@ -29,6 +27,7 @@ def run_scoring(
     dat = GuidedSummarizationDataModule(cfg)
     mdl = GuidedAbsSum.load_from_checkpoint(str(checkpoint_path), cfg=cfg, data_module=dat)
     mdl.freeze()
+    mdl.to('cuda' if torch.cuda.is_available() else 'cpu')
 
     dat_loader = dat.inference_dataloader()
     batches_required = int(max_samples / cfg.batch_sizes[3])
@@ -58,12 +57,23 @@ def run_scoring(
 
         write_object_to_file(str(scores_path), df_results)
         print(f'> Stored batch, {len(df_results.index)} samples processed now')
+        print('✔ Done.')
+        print()
 
         if (batch_idx + 1) > batches_required:
             break
 
 
 def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
+    """
+    Calculates Rouge scores for a set of inferred summaries. The data frame must contain at least two columns:
+
+    - `summary` which includes the reference summaries
+    - `summary_predicted` which includes the inferred summary
+
+    The rouge scores are added to the data frame as separate columns.
+    """
+
     result_dict: dict = {}
     rouge_variants = list(map(lambda n: f"rouge{n}", list(range(1, rouge_n + 1)) + ['L']))
     scorer = rouge_scorer.RougeScorer(rouge_variants)

@@ -64,9 +64,9 @@ class GuidedAbsSum(pl.LightningModule):
         # prepare batch
         #
         x_prepared = list([p for p in self.data_module.preprocess(x)])
-        token_ids = torch.cat([p['x_input']['token_ids'] for p in x_prepared])
-        attention_masks = torch.cat([p['x_input']['attention_mask'] for p in x_prepared])
-        segment_ids = torch.cat([p['x_input']['segment_ids'] for p in x_prepared])
+        token_ids = torch.cat([p['x_input']['token_ids'] for p in x_prepared]).to(self.device)
+        attention_masks = torch.cat([p['x_input']['attention_mask'] for p in x_prepared]).to(self.device)
+        segment_ids = torch.cat([p['x_input']['segment_ids'] for p in x_prepared]).to(self.device)
 
         x_input_batch = {
             'token_ids': token_ids,
@@ -86,7 +86,7 @@ class GuidedAbsSum(pl.LightningModule):
         #
         beam_search: List['BeamSearchState'] = []
         for i in range(top_vec.shape[0]):
-            beam_search.append(BeamSearchState(x[i], top_vec[i], gui_vec[i], self.data_module, self.config))
+            beam_search.append(BeamSearchState(x[i], top_vec[i], gui_vec[i], self.data_module, self.config, self.device))
 
         while True:
             # Collect inputs for next decoder batch and store which entry maps to which search state
@@ -112,7 +112,10 @@ class GuidedAbsSum(pl.LightningModule):
 
             # stop search if no open search results are found.
             if len(results_in_progress) == 0:
+                print()
                 break
+            else:
+                print('.', end='')
 
             # Remove potential batch overflow from batch
             results_in_progress = results_in_progress[:self.config.batch_sizes[2]]
@@ -705,11 +708,11 @@ class LabelSmoothingLoss(nn.Module):
 
 class BeamSearchState:
 
-    def __init__(self, input: str, top_vec: torch.Tensor, gui_vec: torch.Tensor, data_module: GuidedSummarizationDataModule, config: GuidedSummarizationConfig):
+    def __init__(self, input: str, top_vec: torch.Tensor, gui_vec: torch.Tensor, data_module: GuidedSummarizationDataModule, config: GuidedSummarizationConfig, device: str):
         self.input = input
         self.top_vec = top_vec
         self.gui_vec = gui_vec
-        self.results: List['BeamSearchResult'] = [ BeamSearchResult.create(data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, config.max_target_length) ]
+        self.results: List['BeamSearchResult'] = [BeamSearchResult.create(data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, config.max_target_length, device)]
         self.started = time.time()
         self.k = config.beam_k
         self.alpha = config.beam_alpha
@@ -736,11 +739,11 @@ class BeamSearchResult:
 
         self.prob_cache = prob_cache
         self.beam_prob_cache = None
-        self.max_length = 256
+        self.max_length = max_length
 
     @staticmethod
-    def create(token_id: int, token: str, prob: float, input_length: int) -> 'BeamSearchResult':
-        token_ids = torch.zeros(input_length).type(torch.IntTensor)
+    def create(token_id: int, token: str, prob: float, input_length: int, device: str) -> 'BeamSearchResult':
+        token_ids = torch.zeros(input_length).type(torch.IntTensor).to(device)
         token_ids[0] = token_id
         return BeamSearchResult(token_ids, [token], [prob])
 
@@ -752,7 +755,7 @@ class BeamSearchResult:
 
     def beam_prob(self, alpha: float) -> float:
         if self.beam_prob_cache is None:
-            self.beam_prob_cache = np.log(self.prob()) * (1/(self.length() ** alpha))
+            self.beam_prob_cache = (torch.tensor(self.prob()).log() * (1/(self.length() ** alpha))).item()
 
         return self.beam_prob_cache
 
