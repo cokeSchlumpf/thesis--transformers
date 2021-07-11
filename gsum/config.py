@@ -115,7 +115,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Beam Search configuration
     """
-    beam_k: int = 5
+    beam_k: int = 3
 
     beam_alpha: float = 0.75
 

@@ -8,9 +8,10 @@ import torch
 
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataset import T_co
 from transformers import AutoTokenizer
 from tqdm import tqdm
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .config import GuidedSummarizationConfig
 from .preprocess import preprocess_extractive_output_sample, preprocess_input_sample, preprocess_output_sample, GuidedSummarizationInput, GuidedSummarizationExtractiveTarget, GuidedSummarizationTarget
@@ -45,6 +46,25 @@ class GuidedSummarizationDataset(Dataset):
             }
 
         return result
+
+
+class SummaryDataset(Dataset):
+
+    def __init__(self, source: List[str], references: Optional[List[str]] = None):
+        if references is not None:
+            assert len(references) == len(source)
+
+        self.source = source
+        self.references = references
+
+    def __len__(self):
+        return len(self.source)
+
+    def __getitem__(self, index) -> Tuple[str, Optional[str]]:
+        if self.references is not None:
+            return self.source[index], self.references[index]
+        else:
+            return self.source[index], None
 
 
 class GuidedSummarizationDataModule(pl.LightningDataModule):
@@ -138,7 +158,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_source_df = pd.read_csv(raw_source_path)
         raw_target_df = pd.read_csv(raw_target_path)
 
-        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]  # TODO: Remove limit for real training.
+        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
@@ -244,7 +264,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if self.train is None:
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
-            return DataLoader(self.train, self.config.batch_sizes[1], num_workers=0)
+            return DataLoader(self.train, self.config.batch_sizes[0], num_workers=0)
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         if self.test is None:
@@ -257,6 +277,26 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
             return DataLoader(self.validate, self.config.batch_sizes[2], num_workers=0)
+
+    def inference_dataloader(self, dataset: str = 'test', shuffle: bool = True) -> DataLoader:
+        """
+        Returns data for inference. The data is not pre-processed, the data loader also contains the reference sample for
+        calculating ROUGE scores later.
+
+        :param dataset The name of the dataset to load the data from.
+        :param shuffle Whether data should be shuffled while loading.
+        """
+        raw_source_path = self.config.data_raw_path + '/' + dataset + '.source'
+        raw_target_path = self.config.data_raw_path + '/' + dataset + '.target'
+
+        raw_source_df = pd.read_csv(raw_source_path)
+        raw_target_df = pd.read_csv(raw_target_path)
+
+        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)
+        sources = [row['text'] for _, row in raw_data.iterrows()]
+        references = [row['summary'] for _, row in raw_data.iterrows()]
+
+        return DataLoader(SummaryDataset(sources, references), batch_size=self.config.batch_sizes[2], num_workers=0, shuffle=shuffle)
 
     def transfer_batch_to_device(self, batch: Any, device: Optional[torch.device] = None) -> Any:
         batch['x_input']['token_ids'] = batch['x_input']['token_ids'].to(device)

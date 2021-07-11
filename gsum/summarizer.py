@@ -3,6 +3,8 @@ import functools
 import math
 import numpy as np
 import pytorch_lightning as pl
+import re
+import time
 import torch
 import torch.nn.functional as F
 
@@ -13,7 +15,7 @@ from typing import Callable, List, Optional
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
 
-from .preprocess import TARGET_BOS, TARGET_EOS
+from .preprocess import TARGET_BOS, TARGET_EOS, TARGET_SEP
 
 
 #
@@ -52,54 +54,99 @@ class GuidedAbsSum(pl.LightningModule):
         # TODO: Weights initialization?
         #
 
-    def forward(self, x: List[str]) -> List[str]:
-        x_prepared = self.data_module.preprocess(x)
-        return [self.infer(i['x_input']) for i in x_prepared]
-
-    def infer(self, x_input: dict) -> str:
+    def forward(self, x: List[str]) -> List['BeamSearchResult']:
         self.enc.to(self.device)
         self.dec.to(self.device)
         self.gen.to(self.device)
+        start = time.time()
 
-        top_vec, gui_vec = self.enc(x_input)
-        results: List[BeamSearchResult] = [BeamSearchResult.create(self.data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, self.config.max_target_length)]
+        #
+        # prepare batch
+        #
+        x_prepared = list([p for p in self.data_module.preprocess(x)])
+        token_ids = torch.cat([p['x_input']['token_ids'] for p in x_prepared])
+        attention_masks = torch.cat([p['x_input']['attention_mask'] for p in x_prepared])
+        segment_ids = torch.cat([p['x_input']['segment_ids'] for p in x_prepared])
 
-        for _ in range(self.config.max_target_length):
-            results = self.infer_iteration(top_vec, gui_vec, x_input, results)
+        x_input_batch = {
+            'token_ids': token_ids,
+            'attention_mask': attention_masks,
+            'segment_ids': segment_ids
+        }
 
-        return results[0].text()
+        x_guidance_batch = x_input_batch
 
-    def infer_iteration(self, top_vec: torch.Tensor, gui_vec: torch.Tensor, x_input: dict, results: List['BeamSearchResult']):
-        results_next: List[BeamSearchResult] = []
+        #
+        # Encoder
+        #
+        top_vec, gui_vec = self.enc(x_input_batch)
 
-        for result in results:
-            if result.is_eos():
-                results_next.append(result)
-            else:
-                '''
-                target = self.data_module.preprocess_target(["""Accident happens"""])  # in Santa Ynez, California, near where Crosby lives . The jogger suffered multiple fractures; his injuries are not believed to be life-threatening ."""]) #  result.token_ids.reshape(1, self.config.max_target_length)
-                target = [t for t in target]
-                target = target[0]['y']['token_ids']
-                '''
+        #
+        # Decoder
+        #
+        beam_search: List['BeamSearchState'] = []
+        for i in range(top_vec.shape[0]):
+            beam_search.append(BeamSearchState(x[i], top_vec[i], gui_vec[i], self.data_module, self.config))
 
-                target = result.token_ids.reshape(1, self.config.max_target_length)
+        while True:
+            # Collect inputs for next decoder batch and store which entry maps to which search state
+            results_in_progress: List[BeamSearchResult] = []
+            results_search_map: List[int] = []
+            batch_x_input_token_ids: List[torch.Tensor] = []
+            batch_x_guidance_token_ids: List[torch.Tensor] = []
+            batch_topic_vecs: List[torch.Tensor] = []
+            batch_gui_vecs: List[torch.Tensor] = []
 
-                state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])
-                dec_out, state = self.dec(target, top_vec, gui_vec, state)
-                output = self.gen(dec_out)
+            for i, s in enumerate(beam_search):
+                # Add open results to batch until max. batch size is used
+                results_in_progress_from_search = s.results_in_progress()
+                results_in_progress = results_in_progress + results_in_progress_from_search
+                results_search_map = results_search_map + ([i] * len(results_in_progress_from_search))
+                batch_x_input_token_ids = batch_x_input_token_ids + ([x_input_batch['token_ids'][i]] * len(results_in_progress_from_search))
+                batch_x_guidance_token_ids = batch_x_guidance_token_ids + ([x_guidance_batch['token_ids'][i]] * len(results_in_progress_from_search))
+                batch_topic_vecs = batch_topic_vecs + ([s.top_vec] * len(results_in_progress_from_search))
+                batch_gui_vecs = batch_gui_vecs + ([s.gui_vec] * len(results_in_progress_from_search))
 
-                top_k = torch.topk(output[0, result.length() - 1], k=self.config.beam_k)
+                if len(results_in_progress) > self.config.batch_sizes[2]:
+                    break
+
+            # stop search if no open search results are found.
+            if len(results_in_progress) == 0:
+                break
+
+            # Remove potential batch overflow from batch
+            results_in_progress = results_in_progress[:self.config.batch_sizes[2]]
+            results_search_map = results_search_map[:self.config.batch_sizes[2]]
+            batch_x_input_token_ids = batch_x_input_token_ids[:self.config.batch_sizes[2]]
+            batch_x_guidance_token_ids = batch_x_guidance_token_ids[:self.config.batch_sizes[2]]
+            batch_topic_vecs = batch_topic_vecs[:self.config.batch_sizes[2]]
+            batch_gui_vecs = batch_gui_vecs[:self.config.batch_sizes[2]]
+
+            # Prepare decoder input
+            target = torch.cat([result.token_ids.reshape(1, self.config.max_target_length) for result in results_in_progress])
+            state = self.dec.create_decoder_state(torch.stack(batch_x_guidance_token_ids), torch.stack(batch_x_input_token_ids))
+
+            dec_out, state = self.dec(target, torch.stack(batch_topic_vecs), torch.stack(batch_gui_vecs), state)
+            output = self.gen(dec_out)
+
+            # Update search results
+            for i, r in enumerate(results_in_progress):
+                search_state: 'BeamSearchState' = beam_search[results_search_map[i]]
+                top_k = torch.topk(output[i, r.length() - 1], k=self.config.beam_k)
                 probs = torch.exp(top_k.values)
                 token_ids = top_k.indices
-                tokens = self.data_module.tokenizer.convert_ids_to_tokens(token_ids)
+                tokens: List[str] = self.data_module.tokenizer.convert_ids_to_tokens(token_ids)
 
-                for i in range(self.config.beam_k):
-                    results_next.append(result.append(token_ids[i], tokens[i], probs[i]))
+                results_next = [r.append(token_ids[j], t, probs[j]) for j, t in enumerate(tokens)]
+                search_state.replace_result(r, results_next)
 
-        results_next = sorted(results_next, key=lambda r: r.beam_prob(self.config.beam_alpha, self.config.beam_m), reverse=True)
-        results_next = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating(), results_next))
-        results_next = results_next[:self.config.beam_k]
-        return results_next
+            # Clean and sort results
+            for s in beam_search:
+                s.sort_and_clean()
+
+        end = time.time()
+        print(end - start)
+        return [s.results[0] for s in beam_search]
 
     def predict(self, x_input: dict, target: torch.Tensor):
         """
@@ -479,7 +526,7 @@ class AbsSumTransformerDecoder(nn.Module):
         Args:
             target: FloatTensor of shape [batch_size x target_seq_length] containing token-ids of the target sequence.
             encoder_input_context: FloatTensor of shape [batch_size x document_vector_length x encoder_dimensions] containing encoded input document.
-            encoder_signal_context:
+            encoder_signal_context: Guidance signal of shape [batch_size x guidance_signal_length x encoder_dimensions]
             state:
 
         Returns:
@@ -657,6 +704,30 @@ class LabelSmoothingLoss(nn.Module):
         return F.kl_div(output, model_prob, reduction='sum')
 
 
+class BeamSearchState:
+
+    def __init__(self, input: str, top_vec: torch.Tensor, gui_vec: torch.Tensor, data_module: GuidedSummarizationDataModule, config: GuidedSummarizationConfig):
+        self.input = input
+        self.top_vec = top_vec
+        self.gui_vec = gui_vec
+        self.results: List['BeamSearchResult'] = [ BeamSearchResult.create(data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, config.max_target_length) ]
+        self.started = time.time()
+        self.k = config.beam_k
+        self.alpha = config.beam_alpha
+
+    def results_in_progress(self) -> List['BeamSearchResult']:
+        return  [result for result in self.results if not result.is_eos()]
+
+    def replace_result(self, existing: 'BeamSearchResult', next_results: List['BeamSearchResult']) -> None:
+        self.results.remove(existing)
+        self.results = self.results + next_results
+
+    def sort_and_clean(self) -> None:
+        self.results = sorted(self.results, key=lambda r: r.beam_prob(self.alpha), reverse=True)
+        self.results = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating(), self.results))
+        self.results = self.results[:self.k]
+
+
 class BeamSearchResult:
 
     def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float]):
@@ -670,15 +741,17 @@ class BeamSearchResult:
         token_ids[0] = token_id
         return BeamSearchResult(token_ids, [token], [prob])
 
-    def prob(self, m: int) -> float:
+    def prob(self) -> float:
         return functools.reduce(lambda p1, p2: p1 * p2, self.probs)
 
-    def beam_prob(self, alpha: float, m: int) -> float:
-        return np.log(self.prob(m)) * (1/(self.length() ** alpha))
+    def beam_prob(self, alpha: float) -> float:
+        return np.log(self.prob()) * (1/(self.length() ** alpha))
 
     def text(self) -> str:
-        # TODO filter/ transform
-        return ' '.join(self.tokens)
+        cleaned = filter(lambda t: t != TARGET_SEP and t != TARGET_BOS and t != TARGET_EOS, self.tokens)
+        cleaned = ' '.join(cleaned)
+        cleaned = re.sub(r'\s([?.!,"](?:\s|$))', r'\1', cleaned)
+        return cleaned
 
     def append(self, token_id: int, token: str, prob: float) -> 'BeamSearchResult':
         token_ids = self.token_ids.detach().clone()
@@ -701,4 +774,4 @@ class BeamSearchResult:
         return len(self.tokens)
 
     def __str__(self):
-        return f'BeamSearchResult(`{self.text()})'
+        return f'BeamSearchResult(`{self.text()}`)'
