@@ -15,7 +15,7 @@ from typing import Callable, List, Optional, Tuple
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
 
-from .preprocess import TARGET_BOS, TARGET_EOS, TARGET_SEP
+from .preprocess_inputs import TARGET_BOS, TARGET_EOS, TARGET_SEP
 
 
 #

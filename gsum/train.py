@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import os
 import pytorch_lightning as pl
 
 from datetime import datetime
@@ -40,7 +41,8 @@ def train(mdl: pl.LightningModule, cfg: GuidedSummarizationConfig, dat: GuidedSu
     date_time = datetime.now().strftime("%Y-%m-%d-%H%M")
 
     training_path = f'./data/trained/{date_time}'
-    write_object_to_file(f'{training_path}/config.pkl', cfg)
+    os.mkdir(training_path)
+    write_object_to_file(f'{training_path}/config.json', cfg.json())
 
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',

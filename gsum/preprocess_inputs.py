@@ -1,3 +1,4 @@
+from lib.oracle_summary import extract_oracle_summary
 from lib.text_preprocessing import clean_html, preprocess_text, simple_punctuation_only, to_lower
 from lib.text_similarity import most_similar_sentences
 from lib.utils import extract_sentence_tokens
@@ -89,7 +90,7 @@ class GuidedSummarizationExtractiveTarget:
         }
 
 
-def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.Language, max_input_sentences: int = 128) -> GuidedSummarizationExtractiveTarget:
+def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.Language, max_input_sentences: int = 128, method: str = 'similarity') -> GuidedSummarizationExtractiveTarget:
     """
     Preprocesses targets for extractive summarization.
 
@@ -97,9 +98,14 @@ def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.La
     :param sample The summarized source
     :param lang A spaCy language model which is used for text-processing
     :param max_input_sentences The max. number of sentences from the input to be used
+    :param method Which method should be used for extracting sentences? Possible options are 'similarity' or 'oracle'.
     """
 
-    summary, sentence_ids, sentence_mask = most_similar_sentences(source, sample, lang, max_input_sentences)
+    if method == 'similarity':
+        summary, sentence_ids, sentence_mask = most_similar_sentences(source, sample, lang, max_input_sentences)
+    else:
+        assert method == 'oracle'
+        summary, sentence_ids, sentence_mask = extract_oracle_summary(source, sample, lang, max_input_sent_count=max_input_sentences, oracle_length=True)
 
     sentence_padding_mask = [0] * len(sentence_ids)
     sentence_padding_mask += [1] * (max_input_sentences - len(sentence_ids))
@@ -167,6 +173,7 @@ def preprocess_input_sample(
     :param lang A spaCy language model which is used for pre-processing
     :param tokenizer The pre-trained BERT tokenizer
     :param max_length Length of input sequence after processing (shorter inputs will be padded, longer sequences will be cut), only full sentences are includes
+    :param max_input_sentences Maximum number of input sentences.
     :param min_sentence_tokens Minimum number of tokens a sentence should contain to be included
 
     Returns:
@@ -270,3 +277,25 @@ def preprocess_input_sample(
         torch.Tensor(attention_mask).type(torch.IntTensor),
         torch.Tensor(cls_indices).type(torch.IntTensor),
         torch.Tensor(cls_mask).type(torch.IntTensor))
+
+
+def preprocess_guidance_extractive_training(source: str, target: str, lang: spacy.language, tokenizer: PreTrainedTokenizer,
+                                            max_length: int = 512, max_input_sentences: int = 128, min_sentence_tokens: int = 5, method: str = 'oracle') -> GuidedSummarizationInput:
+    """
+    Prepares an extractive guidance signal for training. By generating an extractive summary based on the target summary.
+
+    :param source The source text.
+    :param target The reference summary.
+    :param lang SpaCy language model for text processing.
+    :param tokenizer The tokenizer used for tokenizing the input signal.
+    :param max_length The maximum length expected for the guidance signal.
+    :param max_input_sentences The max. number of expected input sentences.
+    :param min_sentence_tokens The minimum number of tokens in a sentence to be included.
+    :param method The method used to create a summary.
+
+    Returns:
+        Encoded Guidance Signal.
+    """
+
+    summary, _, _ = most_similar_sentences(source, target, lang, max_input_sentences)
+    return preprocess_input_sample(summary, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)

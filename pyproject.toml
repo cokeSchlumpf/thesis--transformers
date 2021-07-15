@@ -21,6 +21,7 @@ pytest = "^6.2.4"
 torch = "1.9.0"
 torchtext = "^0.10.0"
 rouge-score = "^0.0.4"
+rouge = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 

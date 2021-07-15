@@ -1296,6 +1296,17 @@ requests = ">=2.0.0"
 rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
 [[package]]
+name = "rouge"
+version = "1.0.0"
+description = "Full Python ROUGE Score Implementation (not a wrapper)"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+six = "*"
+
+[[package]]
 name = "rouge-score"
 version = "0.0.4"
 description = "Pure python implementation of ROUGE-1.5.5."
@@ -1877,7 +1888,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "4ceb6c718d4225d03618f05634f85f2d812960be3e2ce66749228057ce354494"
+content-hash = "856e2a9344458a1d7492a98693b78a4665ffeabdec96110b16662ab1ef0dcf56"
 
 [metadata.files]
 absl-py = [
@@ -2864,6 +2875,10 @@ requests-oauthlib = [
     {file = "requests-oauthlib-1.3.0.tar.gz", hash = "sha256:b4261601a71fd721a8bd6d7aa1cc1d6a8a93b4a9f5e96626f8e4d91e8beeaa6a"},
     {file = "requests_oauthlib-1.3.0-py2.py3-none-any.whl", hash = "sha256:7f71572defaecd16372f9006f33c2ec8c077c3cfa6f5911a9a90202beb513f3d"},
     {file = "requests_oauthlib-1.3.0-py3.7.egg", hash = "sha256:fa6c47b933f01060936d87ae9327fead68768b69c6c9ea2109c48be30f2d4dbc"},
+]
+rouge = [
+    {file = "rouge-1.0.0-py3-none-any.whl", hash = "sha256:bd0503c5bc944815273ba566c51f9763e6840dc63cf4aaadf25626e4091cd1d2"},
+    {file = "rouge-1.0.0.tar.gz", hash = "sha256:70ba71ab4fe6be6c42bc97c1b76f21a1305a7b092bc708a275867631a6d6c61c"},
 ]
 rouge-score = [
     {file = "rouge_score-0.0.4-py2.py3-none-any.whl", hash = "sha256:b57fd8a3589a392f1bb43a31788a46269102c84849564277761826b91f4d07d5"},

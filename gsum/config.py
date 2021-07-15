@@ -21,7 +21,9 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Pre-preprocessing configuration
     """
-    spacy_model: str = 'en_core_web_sm'
+    spacy_model: str = 'en_core_web_sm'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
+
+    extractive_preparation_method: str = 'oracle'  # Alternatives: 'similarity'
 
     """
     Training batch sizes (training, test, validation, inference)
@@ -118,3 +120,8 @@ class GuidedSummarizationConfig(BaseModel):
     beam_k: int = 3
 
     beam_alpha: float = 0.75
+
+    """
+    Guidance configuration
+    """
+    guidance_method: str = 'extractive'  # `extractive` - An extractive summary is used as guidance signal, `keywords` - Keywords are predicted from source and used as guidance signal.

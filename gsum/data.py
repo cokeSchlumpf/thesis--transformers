@@ -13,10 +13,12 @@ from tqdm import tqdm
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .config import GuidedSummarizationConfig
-from .preprocess import preprocess_extractive_output_sample, preprocess_input_sample, preprocess_output_sample, GuidedSummarizationInput, GuidedSummarizationExtractiveTarget, GuidedSummarizationTarget
+from .preprocess_inputs import preprocess_extractive_output_sample, preprocess_guidance_extractive_training, preprocess_input_sample, preprocess_output_sample, GuidedSummarizationInput, GuidedSummarizationExtractiveTarget, GuidedSummarizationTarget
 from lib.utils import checksum_of_file, read_file_to_object, read_file_to_string, write_object_to_file, write_string_to_file
 
 tqdm.pandas()
+
+#SPACY_MODEL = spacy.load('en_core_web_md')
 
 
 class GuidedSummarizationDataset(Dataset):
@@ -115,13 +117,26 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         write_object_to_file(path, result)
         return path
 
+    def prepare_guidance_extractive(self, params: (str, int, pd.DataFrame)) -> str:
+        """
+        Process a batch, store the result in a file and returns the path.
+        """
+        dataset, batch_idx, df = params
+
+        path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + str(batch_idx) + '.guidance.ext.' + self.config.extractive_preparation_method + '.pkl'
+        result = [
+            preprocess_guidance_extractive_training(row['text'], row['summary'], self.lang, self.tokenizer, self.config.max_input_sentences, self.config.max_input_sentences, method=self.config.extractive_preparation_method)
+            for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+        write_object_to_file(path, result)
+        return path
+
     def prepare_extractive_target(self, params: (str, int, pd.DataFrame)) -> str:
         """
         Processes a batch, stores the result in a file and returns the file path.
         """
         dataset, batch_idx, df = params
-        path = self.config.data_prepared_path + '/' + dataset + '.prepared.ext.' + str(batch_idx) + '.target.pkl'
-        result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+        path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + str(batch_idx) + '.target.ext.' + self.config.extractive_preparation_method + '.pkl'
+        result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences, self.config.extractive_preparation_method) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
         write_object_to_file(path, result)
         return path
 
@@ -203,9 +218,10 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         # Prepare extractive target data
         #
         if self.is_extractive:
-            prepared_ext_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.ext.target.pkl'
+            prepared_ext_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.target.ext.' + self.config.extractive_preparation_method + '.pkl'
             if (os.path.isfile(prepared_ext_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('> process extractive target data')
+
                 with mp.Pool(mp.cpu_count()) as p:
                     results = p.map(self.prepare_extractive_target, batches)
 
@@ -217,6 +233,26 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
                 print(f'> processed {len(prepared_ext_target)} samples')
                 write_object_to_file(prepared_ext_target_path, prepared_ext_target)
 
+        #
+        # Prepare extractive summary as guidance signal
+        #
+        if self.config.guidance_method == 'extractive':
+            prepared_guidance_ext_path = self.config.data_prepared_path + '/' + dataset + '.prepared.guidance.ext.' + self.config.extractive_preparation_method + '.pkl'
+
+            if (os.path.isfile(prepared_guidance_ext_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
+                print('< process guidance signals for extractive summary')
+
+                with mp.Pool(mp.cpu_count()) as p:
+                    results = p.map(self.prepare_guidance_extractive, batches)
+
+                prepared_guidance_ext = []
+                for result in results:
+                    prepared_guidance_ext += read_file_to_object(result)
+                    os.remove(result)
+
+                print(f'> processed {len(prepared_guidance_ext)} samples')
+                write_object_to_file(prepared_guidance_ext_path, prepared_guidance_ext)
+
     def setup(self, stage: Optional[str] = None) -> None:
         self.train = self.__setup_dataloader('train')
         self.test = self.__setup_dataloader('test')
@@ -227,7 +263,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         print(f'Loading dataset `{dataset}` ...')
         prepared_source_path = self.config.data_prepared_path + '/' + dataset + '.prepared.source.pkl'
         prepared_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.target.pkl'
-        prepared_ext_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.ext.target.pkl'
+        prepared_ext_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.target.ext.' + self.config.extractive_preparation_method + '.pkl'
 
         prepared_source: List[GuidedSummarizationInput] = read_file_to_object(prepared_source_path)
 
