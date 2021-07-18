@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from torch import nn
-from transformers import AutoModel
+from transformers import AutoModel, BertModel, BertConfig
 from typing import Callable, List, Optional, Tuple
 
 from .config import GuidedSummarizationConfig
@@ -86,7 +86,8 @@ class GuidedAbsSum(pl.LightningModule):
         #
         beam_search: List['BeamSearchState'] = []
         for i in range(top_vec.shape[0]):
-            beam_search.append(BeamSearchState(x[i], top_vec[i], gui_vec[i], self.data_module, self.config, self.device))
+            beam_search.append(
+                BeamSearchState(x[i], top_vec[i], gui_vec[i], self.data_module, self.config, self.device))
 
         while True:
             # Collect inputs for next decoder batch and store which entry maps to which search state
@@ -102,8 +103,10 @@ class GuidedAbsSum(pl.LightningModule):
                 results_in_progress_from_search = s.results_in_progress()
                 results_in_progress = results_in_progress + results_in_progress_from_search
                 results_search_map = results_search_map + ([i] * len(results_in_progress_from_search))
-                batch_x_input_token_ids = batch_x_input_token_ids + ([x_input_batch['token_ids'][i]] * len(results_in_progress_from_search))
-                batch_x_guidance_token_ids = batch_x_guidance_token_ids + ([x_guidance_batch['token_ids'][i]] * len(results_in_progress_from_search))
+                batch_x_input_token_ids = batch_x_input_token_ids + (
+                            [x_input_batch['token_ids'][i]] * len(results_in_progress_from_search))
+                batch_x_guidance_token_ids = batch_x_guidance_token_ids + (
+                            [x_guidance_batch['token_ids'][i]] * len(results_in_progress_from_search))
                 batch_topic_vecs = batch_topic_vecs + ([s.top_vec] * len(results_in_progress_from_search))
                 batch_gui_vecs = batch_gui_vecs + ([s.gui_vec] * len(results_in_progress_from_search))
 
@@ -126,8 +129,10 @@ class GuidedAbsSum(pl.LightningModule):
             batch_gui_vecs = batch_gui_vecs[:self.config.batch_sizes[2]]
 
             # Prepare decoder input
-            target = torch.cat([result.token_ids.reshape(1, self.config.max_target_length) for result in results_in_progress])
-            state = self.dec.create_decoder_state(torch.stack(batch_x_guidance_token_ids), torch.stack(batch_x_input_token_ids))
+            target = torch.cat(
+                [result.token_ids.reshape(1, self.config.max_target_length) for result in results_in_progress])
+            state = self.dec.create_decoder_state(torch.stack(batch_x_guidance_token_ids),
+                                                  torch.stack(batch_x_input_token_ids))
 
             dec_out, state = self.dec(target, torch.stack(batch_topic_vecs), torch.stack(batch_gui_vecs), state)
             output = self.gen(dec_out)
@@ -159,7 +164,8 @@ class GuidedAbsSum(pl.LightningModule):
         self.gen.to(self.device)
 
         top_vec, gui_vec = self.enc(x_input)
-        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_input[
+            'token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
         dec_out, state = self.dec(target, top_vec, gui_vec, state)
         output = self.gen(dec_out)
 
@@ -192,23 +198,25 @@ class GuidedAbsSum(pl.LightningModule):
 
     def configure_optimizers(self):
         enc_params = [param for name, param in self.named_parameters() if name.startswith('enc.bert')]
-        enc_optim = torch.optim.Adam(enc_params, self.config.encoder_optim_lr, self.config.encoder_optim_beta, self.config.encoder_optim_eps)
+        enc_optim = torch.optim.Adam(enc_params, self.config.encoder_optim_lr, self.config.encoder_optim_beta,
+                                     self.config.encoder_optim_eps)
 
         dec_params = [param for name, param in self.named_parameters() if not name.startswith('enc.bert')]
-        dec_optim = torch.optim.Adam(dec_params, self.config.decoder_optim_lr, self.config.decoder_optim_beta, self.config.decoder_optim_eps)
+        dec_optim = torch.optim.Adam(dec_params, self.config.decoder_optim_lr, self.config.decoder_optim_beta,
+                                     self.config.decoder_optim_eps)
 
         return [enc_optim, dec_optim]
 
     def optimizer_step(
-        self,
-        epoch: int = None,
-        batch_idx: int = None,
-        optimizer: torch.optim.Optimizer = None,
-        optimizer_idx: int = None,
-        optimizer_closure: Optional[Callable] = None,
-        on_tpu: bool = None,
-        using_native_amp: bool = None,
-        using_lbfgs: bool = None) -> None:
+            self,
+            epoch: int = None,
+            batch_idx: int = None,
+            optimizer: torch.optim.Optimizer = None,
+            optimizer_idx: int = None,
+            optimizer_closure: Optional[Callable] = None,
+            on_tpu: bool = None,
+            using_native_amp: bool = None,
+            using_lbfgs: bool = None) -> None:
 
         if optimizer_idx == 0:
             lr = self.config.encoder_optim_lr
@@ -238,7 +246,12 @@ class GuidedExtSum(pl.LightningModule):
         self.data_module = data_module
 
         self.bert = Bert(cfg)
-        self.enc = ExtSumTransformerEncoder(self.bert.model.config.hidden_size)
+        self.enc = ExtSumTransformerEncoder(self.bert.model.config.hidden_size, dropout=self.config.encoder_dropout)
+        self.loss = nn.BCELoss(reduction='sum')
+
+        for p in self.enc.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def forward(self, x: List[str]):
         prepared_data = self.data_module.preprocess(x)
@@ -276,14 +289,17 @@ class GuidedExtSum(pl.LightningModule):
 
         top_vec = self.bert(x_input)
         sents_vec = top_vec[torch.arange(top_vec.size(0)).unsqueeze(1), x_input['cls_indices'].type(torch.LongTensor)]
-        return self.enc(sents_vec, x_input['cls_mask'])
+        sents_vec = sents_vec * (1 - x_input['cls_mask'][:, :, None]).float()
+        sents_vec = self.enc(sents_vec, x_input['cls_mask'])
+        sents_vec = sents_vec.squeeze(-1)
+        return sents_vec
 
     def shared_step(self, step, batch):
         x_input = batch['x_input']
         y = batch['y']
         z = self.predict(x_input)
 
-        loss = F.binary_cross_entropy(z, y['sentence_mask'].float())
+        loss = self.loss(z, y['sentence_mask'].float())
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
 
@@ -297,7 +313,28 @@ class GuidedExtSum(pl.LightningModule):
         return self.shared_step('test', batch)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.00002)
+        return torch.optim.Adam(self.parameters(), self.config.encoder_optim_lr)
+
+    def optimizer_step(
+            self,
+            epoch: int = None,
+            batch_idx: int = None,
+            optimizer: torch.optim.Optimizer = None,
+            optimizer_idx: int = None,
+            optimizer_closure: Optional[Callable] = None,
+            on_tpu: bool = None,
+            using_native_amp: bool = None,
+            using_lbfgs: bool = None) -> None:
+
+        warmup = self.config.encoder_optim_warmup_steps
+        lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+
+        self.log(f'opt_{optimizer_idx}_lr', lr, True)
+
+        for pg in optimizer.param_groups:
+            pg['lr'] = lr
+
+        optimizer.step(closure=optimizer_closure)
 
 
 #
@@ -313,21 +350,31 @@ class ExtSumTransformerEncoder(nn.Module):
 
     def __init__(self, d_model: int, layers: int = 2, heads: int = 8, dim_ff: int = 2048, dropout: float = 0.2):
         super(ExtSumTransformerEncoder, self).__init__()
-        self.pos_enc = PositionalEncoding(d_model, dropout)
+        self.pos_enc = PositionalEncoding2(d_model, dropout)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model, heads, dim_ff, dropout, batch_first=True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, layers, nn.LayerNorm(d_model, eps=1e-6))
+        # encoder_layer = nn.TransformerEncoderLayer(d_model, heads, dim_ff, dropout, batch_first=True)
+        # self.encoder = nn.TransformerEncoder(encoder_layer, layers)
+        self.layers = layers
+        self.encoder_layers = nn.ModuleList(
+            [ExtTransformerEncoderLayer(d_model, heads, dim_ff, dropout) for _ in range(layers)])
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
-        self.wo = nn.Linear(d_model, 1)
+        self.wo = nn.Linear(d_model, 1, bias=True)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, top_vec, cls_mask):
-        x = self.pos_enc(top_vec)
-        x = self.encoder(x, src_key_padding_mask=cls_mask.bool())
+        max_sentences = top_vec.shape[1]
+        pos_emb = self.pos_enc.pe[:, :max_sentences]
+        x = top_vec * (1 - cls_mask[:, :, None]).float()
+        x = x + pos_emb
+
+        for i in range(self.layers):
+            x = self.encoder_layers[i](i, x, cls_mask)
+
+        # x = self.encoder(x, src_key_padding_mask=cls_mask)
         x = self.layer_norm(x)
         x = self.wo(x)
         x = self.sigmoid(x)
-        x = x.squeeze(-1) * (1 - cls_mask)
+        x = x.squeeze(-1) * (1 - cls_mask).float()
         return x
 
 
@@ -339,7 +386,11 @@ class Bert(nn.Module):
     def __init__(self, cfg: GuidedSummarizationConfig):
         super(Bert, self).__init__()
         self.config = cfg
-        self.model = AutoModel.from_pretrained(cfg.base_model_name)
+        #
+        # self.model = AutoModel.from_pretrained(cfg.base_model_name)
+        # self.model.train()
+        configuration = BertConfig()
+        self.model = BertModel(configuration)
 
     def forward(self, x: dict):
         outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
@@ -362,14 +413,17 @@ class AbsSumTransformerEncoder(nn.Module):
             """
             my_pos_embeddings = nn.Embedding(config.max_input_length, self.bert.config.hidden_size)
             my_pos_embeddings.weight.data[:512] = self.bert.embeddings.position_embeddings.weight.data
-            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_input_length - 512, 1)
+            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None,
+                                                  :].repeat(config.max_input_length - 512, 1)
             self.bert.embeddings.position_embeddings = my_pos_embeddings
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout, batch_first=True)
+            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
+            batch_first=True)
 
         self.guidance_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout, batch_first=True)
+            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
+            batch_first=True)
 
     def forward(self, x_input: dict):
         """
@@ -394,6 +448,27 @@ class AbsSumTransformerEncoder(nn.Module):
         """
 
         return input_vec, input_vec
+
+
+class ExtTransformerEncoderLayer(nn.Module):
+
+    def __init__(self, d_model: int, heads: int, d_ff: int, dropout: float):
+        super(ExtTransformerEncoderLayer, self).__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, heads, dropout, batch_first=True)
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, iteration, inputs, mask):
+        if iteration != 0:
+            input_norm = self.layer_norm(inputs)
+        else:
+            input_norm = inputs
+
+        context, _ = self.self_attn(input_norm, input_norm, input_norm, mask)
+        output = self.dropout(context) + inputs
+        output = self.feed_forward(output)
+        return output
 
 
 class AbsSumTransformerDecoderLayer(nn.Module):
@@ -517,7 +592,8 @@ class AbsSumTransformerDecoder(nn.Module):
         self.positional_encoding = PositionalEncoding(self.embedding.embedding_dim, dropout)
         self.vocab_size = vocab_size
 
-        self.transformer_layers = nn.ModuleList([AbsSumTransformerDecoderLayer(config, d_model, heads, d_ff, dropout) for _ in range(num_layers)])
+        self.transformer_layers = nn.ModuleList(
+            [AbsSumTransformerDecoderLayer(config, d_model, heads, d_ff, dropout) for _ in range(num_layers)])
         self.ff = nn.LayerNorm(d_model, eps=1e-6)
 
     def forward(self, target: torch.Tensor, encoder_input_context: torch.Tensor, encoder_signal_context: torch.Tensor,
@@ -647,6 +723,34 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
+class PositionalEncoding2(nn.Module):
+
+    def __init__(self, dim, dropout, max_len=5000):
+        super().__init__()
+        pe = torch.zeros(max_len, dim)
+        position = torch.arange(0, max_len).unsqueeze(1)
+        div_term = torch.exp((torch.arange(0, dim, 2, dtype=torch.float) * -(math.log(10000.0) / dim)))
+        pe[:, 0::2] = torch.sin(position.float() * div_term)
+        pe[:, 1::2] = torch.cos(position.float() * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe)
+        self.dropout = nn.Dropout(p=dropout)
+        self.dim = dim
+
+    def forward(self, emb, step=None):
+        emb = emb * math.sqrt(self.dim)
+        if step:
+            emb = emb + self.pe[:, step][:, None, :]
+
+        else:
+            emb = emb + self.pe[:, : emb.size(1)]
+        emb = self.dropout(emb)
+        return emb
+
+    def get_emb(self, emb):
+        return self.pe[:, : emb.size(1)]
+
+
 class PositionwiseFeedForward(nn.Module):
     """ A two-layer Feed-Forward-Network with residual layer norm.
 
@@ -708,17 +812,20 @@ class LabelSmoothingLoss(nn.Module):
 
 class BeamSearchState:
 
-    def __init__(self, input: str, top_vec: torch.Tensor, gui_vec: torch.Tensor, data_module: GuidedSummarizationDataModule, config: GuidedSummarizationConfig, device: str):
+    def __init__(self, input: str, top_vec: torch.Tensor, gui_vec: torch.Tensor,
+                 data_module: GuidedSummarizationDataModule, config: GuidedSummarizationConfig, device: str):
         self.input = input
         self.top_vec = top_vec
         self.gui_vec = gui_vec
-        self.results: List['BeamSearchResult'] = [BeamSearchResult.create(data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0, config.max_target_length, device)]
+        self.results: List['BeamSearchResult'] = [
+            BeamSearchResult.create(data_module.tokenizer.convert_tokens_to_ids(TARGET_BOS), TARGET_BOS, 1.0,
+                                    config.max_target_length, device)]
         self.started = time.time()
         self.k = config.beam_k
         self.alpha = config.beam_alpha
 
     def results_in_progress(self) -> List['BeamSearchResult']:
-        return  [result for result in self.results if not result.is_eos()]
+        return [result for result in self.results if not result.is_eos()]
 
     def replace_result(self, existing: 'BeamSearchResult', next_results: List['BeamSearchResult']) -> None:
         self.results.remove(existing)
@@ -732,7 +839,8 @@ class BeamSearchState:
 
 class BeamSearchResult:
 
-    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float], prob_cache: Optional[float] = None, max_length: int = 256):
+    def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float],
+                 prob_cache: Optional[float] = None, max_length: int = 256):
         self.token_ids = token_ids
         self.tokens = tokens
         self.probs = probs
@@ -755,7 +863,7 @@ class BeamSearchResult:
 
     def beam_prob(self, alpha: float) -> float:
         if self.beam_prob_cache is None:
-            self.beam_prob_cache = (torch.tensor(self.prob()).log() * (1/(self.length() ** alpha))).item()
+            self.beam_prob_cache = (torch.tensor(self.prob()).log() * (1 / (self.length() ** alpha))).item()
 
         return self.beam_prob_cache
 
@@ -780,7 +888,8 @@ class BeamSearchResult:
         else:
             return (self.tokens[-1] == self.tokens[-2]) or \
                    (self.length() >= 4 and self.tokens[-1] == self.tokens[-3] and self.tokens[-2] == self.tokens[-4]) or \
-                   (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and self.tokens[-3] == self.tokens[-6])
+                   (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and
+                    self.tokens[-3] == self.tokens[-6])
 
     def length(self) -> int:
         return len(self.tokens)

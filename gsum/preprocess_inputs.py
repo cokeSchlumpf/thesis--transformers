@@ -297,5 +297,10 @@ def preprocess_guidance_extractive_training(source: str, target: str, lang: spac
         Encoded Guidance Signal.
     """
 
-    summary, _, _ = most_similar_sentences(source, target, lang, max_input_sentences)
+    if method == 'similarity':
+        summary, _, _ = most_similar_sentences(source, target, lang, max_input_sentences)
+    else:
+        assert method == 'oracle'
+        summary, _, _ = extract_oracle_summary(source, target, lang, max_input_sent_count=max_input_sentences, oracle_length=True)
+
     return preprocess_input_sample(summary, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)

@@ -3,7 +3,7 @@ import os
 import pytorch_lightning as pl
 
 from datetime import datetime
-from lib.utils import write_object_to_file
+from lib.utils import write_string_to_file
 from pytorch_lightning.callbacks import ModelCheckpoint
 from typing import Optional
 
@@ -42,7 +42,7 @@ def train(mdl: pl.LightningModule, cfg: GuidedSummarizationConfig, dat: GuidedSu
 
     training_path = f'./data/trained/{date_time}'
     os.mkdir(training_path)
-    write_object_to_file(f'{training_path}/config.json', cfg.json())
+    write_string_to_file(f'{training_path}/config.json', cfg.json())
 
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',

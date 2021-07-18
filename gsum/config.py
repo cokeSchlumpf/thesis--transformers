@@ -23,17 +23,17 @@ class GuidedSummarizationConfig(BaseModel):
     """
     spacy_model: str = 'en_core_web_sm'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
 
-    extractive_preparation_method: str = 'oracle'  # Alternatives: 'similarity'
+    extractive_preparation_method: str = 'similarity'  # Alternatives: 'similarity'
 
     """
     Training batch sizes (training, test, validation, inference)
     """
-    batch_sizes: Tuple[int, int, int, int] = (20, 20, 100, 50)
+    batch_sizes: Tuple[int, int, int, int] = (36, 20, 100, 50)
 
     """
     Number of batches to accumulate during training.
     """
-    accumulate_grad_batches: int = 4
+    accumulate_grad_batches: int = 1
 
     """
     The name of the huggingface transformer base model.
@@ -72,7 +72,7 @@ class GuidedSummarizationConfig(BaseModel):
 
     encoder_ff_dim: int = 2048
 
-    encoder_dropout: float = 0.2
+    encoder_dropout: float = 0.1  # 0.2
 
     """
     Parameters for DecoderTransformerLayer
@@ -99,7 +99,7 @@ class GuidedSummarizationConfig(BaseModel):
 
     encoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    encoder_optim_warmup_steps: int = 20000
+    encoder_optim_warmup_steps: int = 10000  # 20000
 
     encoder_optim_eps: float = 1e-9
 
@@ -110,7 +110,7 @@ class GuidedSummarizationConfig(BaseModel):
 
     decoder_optim_beta: Tuple[float, float] = (0.9, 0.999)
 
-    decoder_optim_warmup_steps: int = 10000
+    decoder_optim_warmup_steps: int = 8000  # 10000
 
     decoder_optim_eps: float = 1e-9
 

@@ -172,7 +172,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_source_df = pd.read_csv(raw_source_path)
         raw_target_df = pd.read_csv(raw_target_path)
 
-        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]
+        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]  # TODO
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
@@ -242,7 +242,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             if (os.path.isfile(prepared_guidance_ext_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('< process guidance signals for extractive summary')
 
-                with mp.Pool(mp.cpu_count()) as p:
+                with mp.Pool(8) as p:
                     results = p.map(self.prepare_guidance_extractive, batches)
 
                 prepared_guidance_ext = []
@@ -283,7 +283,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
 
             if self.is_extractive and torch.sum(prepared_target[i].sentence_ids) == 0:
                 remove_indices.append(i)
-            elif torch.sum(prepared_target[i].to_dict()['token_ids']) == 0:
+            elif not self.is_extractive and torch.sum(prepared_target[i].to_dict()['token_ids']) == 0:
                 remove_indices.append(i)
 
         if len(remove_indices) > 0:
@@ -299,7 +299,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if self.train is None:
             raise RuntimeError('DataModule not setup properly. Call `setup` before accessing datasets.')
         else:
-            return DataLoader(self.train, self.config.batch_sizes[0], num_workers=0)
+            return DataLoader(self.train, self.config.batch_sizes[0], num_workers=0, shuffle=True)
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         if self.test is None:
