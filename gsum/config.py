@@ -14,16 +14,16 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Data configuration
     """
-    data_raw_path: str = './data/raw/cnn_dailymail'
+    data_raw_path: str = './data/raw/swisstext'
 
-    data_prepared_path: str = './data/prepared/cnn_dailymail_complete'
+    data_prepared_path: str = './data/prepared/swisstext'
 
     """
     Pre-preprocessing configuration
     """
-    spacy_model: str = 'en_core_web_sm'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
+    spacy_model: str = 'de_core_news_md'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
 
-    extractive_preparation_method: str = 'similarity'  # Alternatives: 'similarity'
+    extractive_preparation_method: str = 'oracle'  # Alternatives: 'similarity'
 
     """
     Training batch sizes (training, test, validation, inference)
@@ -38,7 +38,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The name of the huggingface transformer base model.
     """
-    base_model_name: str = 'bert-base-uncased'
+    base_model_name: str = 'bert-base-german-dbmdz-uncased'  # 'bert-base-uncased'
 
     """
     The maximum length (token count) for input sequences.
