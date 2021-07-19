@@ -125,3 +125,8 @@ class GuidedSummarizationConfig(BaseModel):
     Guidance configuration
     """
     guidance_method: str = 'extractive'  # `extractive` - An extractive summary is used as guidance signal, `keywords` - Keywords are predicted from source and used as guidance signal.
+
+    """
+    Maximum number of parallel processes during preparation.
+    """
+    max_cpus: int = 8

@@ -18,8 +18,6 @@ from lib.utils import checksum_of_file, read_file_to_object, read_file_to_string
 
 tqdm.pandas()
 
-#SPACY_MODEL = spacy.load('en_core_web_md')
-
 
 class GuidedSummarizationDataset(Dataset):
 
@@ -188,7 +186,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         prepared_source_path = self.config.data_prepared_path + '/' + dataset + '.prepared.source.pkl'
         if (os.path.isfile(prepared_source_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
             print('> process source data')
-            with mp.Pool(mp.cpu_count()) as p:
+            with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                 results = p.map(self.prepare_source, batches)
 
             prepared_target = []
@@ -206,7 +204,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             prepared_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.target.pkl'
             if (os.path.isfile(prepared_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('> process target data')
-                with mp.Pool(mp.cpu_count()) as p:
+                with mp.Pool(min(self.config.max_cpus, mp.cpu_count()))  as p:
                     results = p.map(self.prepare_target, batches)
 
                 prepared_target = []
@@ -225,7 +223,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             if (os.path.isfile(prepared_ext_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('> process extractive target data')
 
-                with mp.Pool(mp.cpu_count()) as p:
+                with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_extractive_target, batches)
 
                 prepared_ext_target = []
@@ -245,7 +243,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             if (os.path.isfile(prepared_guidance_ext_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
                 print('< process guidance signals for extractive summary')
 
-                with mp.Pool(8) as p:
+                with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_guidance_extractive, batches)
 
                 prepared_guidance_ext = []
