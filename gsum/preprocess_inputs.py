@@ -101,11 +101,15 @@ def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.La
     :param method Which method should be used for extracting sentences? Possible options are 'similarity' or 'oracle'.
     """
 
+    pipeline = [simple_punctuation_only, to_lower]
+    source_cleaned = preprocess_text(source, lang, pipeline, [clean_html])
+    sample_cleaned = preprocess_text(sample, lang, pipeline, [clean_html])
+
     if method == 'similarity':
-        summary, sentence_ids, sentence_mask = most_similar_sentences(source, sample, lang, max_input_sentences)
+        summary, sentence_ids, sentence_mask = most_similar_sentences(source_cleaned, sample_cleaned, lang, max_input_sentences)
     else:
         assert method == 'oracle'
-        summary, sentence_ids, sentence_mask = extract_oracle_summary(source, sample, lang, max_input_sent_count=max_input_sentences, oracle_length=True)
+        summary, sentence_ids, sentence_mask = extract_oracle_summary(source_cleaned, sample_cleaned, lang, max_input_sent_count=max_input_sentences, oracle_length=True)
 
     sentence_padding_mask = [0] * len(sentence_ids)
     sentence_padding_mask += [1] * (max_input_sentences - len(sentence_ids))

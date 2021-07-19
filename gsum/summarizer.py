@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from torch import nn
-from transformers import AutoModel, BertModel, BertConfig
+from transformers import AutoModel
 from typing import Callable, List, Optional, Tuple
 
 from .config import GuidedSummarizationConfig
@@ -247,7 +247,7 @@ class GuidedExtSum(pl.LightningModule):
 
         self.bert = Bert(cfg)
         self.enc = ExtSumTransformerEncoder(self.bert.model.config.hidden_size, dropout=self.config.encoder_dropout)
-        self.loss = nn.BCELoss(reduction='sum')
+        self.loss = nn.BCELoss(reduction='none')
 
         for p in self.enc.parameters():
             if p.dim() > 1:
@@ -299,7 +299,9 @@ class GuidedExtSum(pl.LightningModule):
         y = batch['y']
         z = self.predict(x_input)
 
-        loss = self.loss(z, y['sentence_mask'].float())
+        loss = self.loss(z, y['sentence_mask'].float() * (1 - x_input['cls_mask']).float())
+        loss = (loss * (1 - x_input['cls_mask']).float()).sum()
+        loss = loss / loss.numel()
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
 
@@ -327,7 +329,10 @@ class GuidedExtSum(pl.LightningModule):
             using_lbfgs: bool = None) -> None:
 
         warmup = self.config.encoder_optim_warmup_steps
-        lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+        # lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+
+        lr = self.config.encoder_optim_lr / 1000
+        lr = lr * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
 
         self.log(f'opt_{optimizer_idx}_lr', lr, True)
 
@@ -370,7 +375,6 @@ class ExtSumTransformerEncoder(nn.Module):
         for i in range(self.layers):
             x = self.encoder_layers[i](i, x, cls_mask)
 
-        # x = self.encoder(x, src_key_padding_mask=cls_mask)
         x = self.layer_norm(x)
         x = self.wo(x)
         x = self.sigmoid(x)
@@ -386,11 +390,8 @@ class Bert(nn.Module):
     def __init__(self, cfg: GuidedSummarizationConfig):
         super(Bert, self).__init__()
         self.config = cfg
-        #
-        # self.model = AutoModel.from_pretrained(cfg.base_model_name)
-        # self.model.train()
-        configuration = BertConfig()
-        self.model = BertModel(configuration)
+        self.model = AutoModel.from_pretrained(cfg.base_model_name)
+        self.model.train()
 
     def forward(self, x: dict):
         outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
@@ -454,7 +455,7 @@ class ExtTransformerEncoderLayer(nn.Module):
 
     def __init__(self, d_model: int, heads: int, d_ff: int, dropout: float):
         super(ExtTransformerEncoderLayer, self).__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, heads, dropout, batch_first=True)
+        self.self_attn = MultiHeadedAttention(heads, d_model, dropout)
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
@@ -465,7 +466,8 @@ class ExtTransformerEncoderLayer(nn.Module):
         else:
             input_norm = inputs
 
-        context, _ = self.self_attn(input_norm, input_norm, input_norm, mask)
+        mask = mask.unsqueeze(1)
+        context, _ = self.self_attn(input_norm, input_norm, input_norm, (1 - mask).bool())
         output = self.dropout(context) + inputs
         output = self.feed_forward(output)
         return output
@@ -778,6 +780,139 @@ class PositionwiseFeedForward(nn.Module):
         inter = self.dropout_1(PositionwiseFeedForward.gelu(self.w_1(self.layer_norm(x))))
         output = self.dropout_2(self.w_2(inter))
         return output + x
+
+
+class MultiHeadedAttention(nn.Module):
+
+    def __init__(self, head_count, model_dim, dropout=0.1, use_final_linear=True):
+        assert model_dim % head_count == 0
+        self.dim_per_head = model_dim // head_count
+        self.model_dim = model_dim
+
+        super(MultiHeadedAttention, self).__init__()
+        self.head_count = head_count
+
+        self.linear_keys = nn.Linear(model_dim,
+                                     head_count * self.dim_per_head)
+        self.linear_values = nn.Linear(model_dim,
+                                       head_count * self.dim_per_head)
+        self.linear_query = nn.Linear(model_dim,
+                                      head_count * self.dim_per_head)
+        self.softmax = nn.Softmax(dim=-1)
+        self.dropout = nn.Dropout(dropout)
+        self.use_final_linear = use_final_linear
+
+        if self.use_final_linear:
+            self.final_linear = nn.Linear(model_dim, model_dim)
+
+    def forward(self, key, value, query, mask=None, layer_cache=None, type=None, predefined_graph_1=None):
+        batch_size = key.size(0)
+        dim_per_head = self.dim_per_head
+        head_count = self.head_count
+
+        def shape(x):
+            """  projection """
+            return x.view(batch_size, -1, head_count, dim_per_head) \
+                .transpose(1, 2)
+
+        def unshape(x):
+            """  compute context """
+            return x.transpose(1, 2).contiguous() \
+                .view(batch_size, -1, head_count * dim_per_head)
+
+        # 1) Project key, value, and query.
+        if layer_cache is not None:
+            if type == "self":
+                query, key, value = self.linear_query(query), \
+                                    self.linear_keys(query), \
+                                    self.linear_values(query)
+
+                key = shape(key)
+                value = shape(value)
+
+                if layer_cache is not None:
+                    device = key.device
+                    if layer_cache["self_keys"] is not None:
+                        key = torch.cat(
+                            (layer_cache["self_keys"].to(device), key),
+                            dim=2)
+                    if layer_cache["self_values"] is not None:
+                        value = torch.cat(
+                            (layer_cache["self_values"].to(device), value),
+                            dim=2)
+                    layer_cache["self_keys"] = key
+                    layer_cache["self_values"] = value
+            elif type == "context":
+                query = self.linear_query(query)
+                if layer_cache is not None:
+                    if layer_cache["memory_keys"] is None:
+                        key, value = self.linear_keys(key), \
+                                     self.linear_values(value)
+                        key = shape(key)
+                        value = shape(value)
+                    else:
+                        key, value = layer_cache["memory_keys"], \
+                                     layer_cache["memory_values"]
+                    layer_cache["memory_keys"] = key
+                    layer_cache["memory_values"] = value
+                else:
+                    key, value = self.linear_keys(key), \
+                                 self.linear_values(value)
+                    key = shape(key)
+                    value = shape(value)
+            elif type == "z_context":
+                query = self.linear_query(query)
+                if layer_cache is not None:
+                    if layer_cache["z_memory_keys"] is None:
+                        key, value = self.linear_keys(key), \
+                                     self.linear_values(value)
+                        key = shape(key)
+                        value = shape(value)
+                    else:
+                        key, value = layer_cache["z_memory_keys"], \
+                                     layer_cache["z_memory_values"]
+                    layer_cache["z_memory_keys"] = key
+                    layer_cache["z_memory_values"] = value
+                else:
+                    key, value = self.linear_keys(key), \
+                                 self.linear_values(value)
+                    key = shape(key)
+                    value = shape(value)
+        else:
+            key = self.linear_keys(key)
+            value = self.linear_values(value)
+            query = self.linear_query(query)
+            key = shape(key)
+            value = shape(value)
+
+        query = shape(query)
+
+        # 2) Calculate and scale scores.
+        query = query / math.sqrt(dim_per_head)
+        scores = torch.matmul(query, key.transpose(2, 3))
+
+        if mask is not None:
+            mask = mask.unsqueeze(1).expand_as(scores)
+            scores = scores.masked_fill(mask, -1e18)
+
+        # 3) Apply attention dropout and compute context vectors.
+
+        attn = self.softmax(scores)
+
+        if not predefined_graph_1 is None:
+            attn_masked = attn[:, -1] * predefined_graph_1
+            attn_masked = attn_masked / (torch.sum(attn_masked, 2).unsqueeze(2) + 1e-9)
+
+            attn = torch.cat([attn[:, :-1], attn_masked.unsqueeze(1)], 1)
+
+        drop_attn = self.dropout(attn)
+        if self.use_final_linear:
+            context = unshape(torch.matmul(drop_attn, value))
+            output = self.final_linear(context)
+            return output, attn
+        else:
+            context = torch.matmul(drop_attn, value)
+            return context, attn
 
 
 class LabelSmoothingLoss(nn.Module):

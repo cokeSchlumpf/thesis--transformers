@@ -28,7 +28,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Training batch sizes (training, test, validation, inference)
     """
-    batch_sizes: Tuple[int, int, int, int] = (36, 20, 100, 50)
+    batch_sizes: Tuple[int, int, int, int] = (36, 20, 36, 50)
 
     """
     Number of batches to accumulate during training.

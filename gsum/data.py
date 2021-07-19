@@ -136,9 +136,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         """
         dataset, batch_idx, df = params
         path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + str(batch_idx) + '.target.ext.' + self.config.extractive_preparation_method + '.pkl'
-        result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences, self.config.extractive_preparation_method) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
-        write_object_to_file(path, result)
-        return path
+        if os.path.isfile(path):
+            return path
+        else:
+            result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences, self.config.extractive_preparation_method) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+            write_object_to_file(path, result)
+            return path
 
     def prepare_target(self, params: (str, int, pd.DataFrame)) -> str:
         """
