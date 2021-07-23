@@ -23,7 +23,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     spacy_model: str = 'de_core_news_md'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
 
-    extractive_preparation_method: str = 'similarity'  # Alternatives: 'similarity'
+    extractive_preparation_method: str = 'similarity'  # Alternatives: 'similarity', 'oracle'
 
     """
     Training batch sizes (training, test, validation, inference)
@@ -124,7 +124,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Guidance configuration
     """
-    guidance_method: str = 'extractive'  # `extractive` - An extractive summary is used as guidance signal, `keywords` - Keywords are predicted from source and used as guidance signal.
+    guidance_method: str = 'extractive'  # `extractive`, `keywords`
 
     """
     Maximum number of parallel processes during preparation.

@@ -9,5 +9,17 @@ SAMPLE = """James Best, best known for his portrayal of bumbling sheriff Rosco P
 class TestTextrank:
     
     def test_preprocessing(self):
-        summary = get_summary(SAMPLE)
+        lang = spacy.load('en_core_web_sm')
+        pipeline = [simple_punctuation_only, to_lower]
+        result = preprocess_text(SAMPLE, lang, pipeline)
+        summary = get_summary(result)
+
         print(summary)
+
+    def test_keywords(self):
+        lang = spacy.load('en_core_web_sm')
+        pipeline = [simple_punctuation_only, to_lower]
+        result = preprocess_text(SAMPLE, lang, pipeline)
+        keywords = get_keywords(result)
+
+        print(keywords)
