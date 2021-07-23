@@ -23,7 +23,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     spacy_model: str = 'de_core_news_md'  # Alternatives: 'en_core_web_sm', 'en_core_web_trf'
 
-    extractive_preparation_method: str = 'oracle'  # Alternatives: 'similarity'
+    extractive_preparation_method: str = 'similarity'  # Alternatives: 'similarity'
 
     """
     Training batch sizes (training, test, validation, inference)

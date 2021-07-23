@@ -23,6 +23,7 @@ torchtext = "^0.10.0"
 rouge-score = "^0.0.4"
 rouge = "^1.0.0"
 summa = "^1.2.0"
+datasets = "^1.10.2"
 
 [tool.poetry.dev-dependencies]
 
