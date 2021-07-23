@@ -14,9 +14,9 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Data configuration
     """
-    data_raw_path: str = './data/raw/swisstext'
+    data_raw_path: str = './data/raw/mlsum'
 
-    data_prepared_path: str = './data/prepared/swisstext'
+    data_prepared_path: str = './data/prepared/mlsum'
 
     """
     Pre-preprocessing configuration
