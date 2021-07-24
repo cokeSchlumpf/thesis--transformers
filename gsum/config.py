@@ -170,6 +170,8 @@ class GuidedSummarizationConfig(BaseModel):
             mdl = 'distilbert-base-cased'
         elif base_model == 'distilbert' and lang == 'de':
             mdl = 'distilbert-base-german-cased'
+        elif base_model == 'electra' and lang == 'de':
+            mdl = 'german-nlp-group/electra-base-german-uncased'
         else:
             raise Exception('Unknown model/language combination.')
 

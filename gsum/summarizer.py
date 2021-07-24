@@ -173,8 +173,8 @@ class GuidedAbsSum(pl.LightningModule):
         self.dec.to(self.device)
         self.gen.to(self.device)
 
-        top_vec, gui_vec = self.enc(x_input)
-        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
+        top_vec, gui_vec = self.enc(x_input, x_guidance)
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_guidance['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
         dec_out, state = self.dec(target, top_vec, gui_vec, state)
         output = self.gen(dec_out)
 
@@ -291,15 +291,18 @@ class GuidedExtSum(pl.LightningModule):
             sample = x[i]
             cleaned = preprocess_text(sample, self.data_module.lang, pipeline, [clean_html])
             sentences = extract_sentence_tokens(self.data_module.lang, cleaned)
-            sentences = filter(lambda s: len(s) > self.config.min_sentence_tokens, sentences)
+            sentences = filter(lambda s: len(s) >= self.config.min_sentence_tokens, sentences)
             sentences = map(lambda s: ' '.join(s), sentences)
             sentences = list(sentences)
 
             sentences_selected = []
-            for j in scores[i]:
-                sentences_selected.append(sentences[j])
+            for j in torch.topk(scores[i], 3).indices:
+                if len(sentences) > j:
+                    sentences_selected.append(sentences[j])
 
-            result.append(SimpleSummarizationResult('. '.join(sentences_selected)))
+            sentences = ' '.join(sentences_selected)
+            sentences = re.sub(r'\s([?.!,"](?:\s|$))', r'\1', sentences)
+            result.append(SimpleSummarizationResult(sentences))
 
         end = time.time()
         return result, end - start
@@ -433,7 +436,7 @@ class Bert(nn.Module):
         self.model.train()
 
     def forward(self, x: dict):
-        if self.config.base_model_name.startswith('bert-'):
+        if self.config.base_model_name.startswith('bert-') or ('electra' in self.config.base_model_name):
             outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
         elif self.config.base_model_name.startswith('distilbert-'):
             outputs = self.model(x['token_ids'])

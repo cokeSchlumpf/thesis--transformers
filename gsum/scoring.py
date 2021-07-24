@@ -1,6 +1,9 @@
 import pandas as pd
+import spacy
 import torch
 
+from lib.oracle_summary import extract_oracle_summary
+from lib.text_preprocessing import clean_html, preprocess_text, simple_punctuation_only, to_lower
 from lib.utils import read_file_to_object, write_object_to_file
 from pathlib import Path
 from rouge_score import rouge_scorer
@@ -70,7 +73,10 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
             'summary': list(references),
             'summary_predicted': list(map(lambda s: s.text(), summaries))
         })
-        df_results = calculate_rouge_scores(df_results)
+
+        df_results['summary_oracle'] = [extract_oracle_summary(row['text'], row['summary'], dat.lang, summary_length=3)[0] for _, row in df_results.iterrows()]
+        df_results = calculate_rouge_scores(df_results, dat.lang)
+        df_results = calculate_rouge_scores(df_results, dat.lang, predicted_col='summary_oracle', prefix='oracle_')
 
         print('> Store results of batch')
 
@@ -83,11 +89,11 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
         print('✔ Done.')
         print()
 
-        if (batch_idx + 1) > batches_required:
+        if (batch_idx + 1) >= batches_required:
             break
 
 
-def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
+def calculate_rouge_scores(df: pd.DataFrame, lang: spacy.Language, rouge_n: int = 3, reference_col: str = 'summary', predicted_col: str = 'summary_predicted', prefix: str = '') -> pd.DataFrame:
     """
     Calculates Rouge scores for a set of inferred summaries. The data frame must contain at least two columns:
 
@@ -100,6 +106,7 @@ def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
     result_dict: dict = {}
     rouge_variants = list(map(lambda n: f"rouge{n}", list(range(1, rouge_n + 1)) + ['L']))
     scorer = rouge_scorer.RougeScorer(rouge_variants)
+    pipeline = [simple_punctuation_only, to_lower]
 
     for r in rouge_variants:
         r = r.replace('rouge', 'r')
@@ -108,8 +115,7 @@ def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
         result_dict[f'{r}f'] = []
 
     for idx, row in df.iterrows():
-        row_scores = scorer.score(row['summary'],
-                                  row['summary_predicted'])  # TODO: Add preprocessing to have similar text quality?
+        row_scores = scorer.score(preprocess_text(row[reference_col], lang, pipeline, [clean_html]), row[predicted_col])
 
         for r in rouge_variants:
             p = r.replace('rouge', 'r')
@@ -119,6 +125,6 @@ def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
             result_dict[f'{p}f'].append(row_scores[r].fmeasure)
 
     for col in result_dict.keys():
-        df[col] = result_dict[col]
+        df[f'{prefix}{col}'] = result_dict[col]
 
     return df
