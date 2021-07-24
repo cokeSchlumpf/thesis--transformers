@@ -226,7 +226,6 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
                 print('> process target data')
                 with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_target, batches)
-                    p.join()
 
                 prepared_target = []
                 for result in results:
@@ -242,11 +241,10 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if self.is_extractive:
             prepared_ext_target_path = self.config.data_prepared_path + '/' + dataset + '.prepared.target.ext.' + self.config.extractive_preparation_method + '.pkl'
             if (os.path.isfile(prepared_ext_target_path) is False) or (raw_data_checksum != raw_data_checksum_latest):
-                print('> process extractive target data')
+                print(f'> process extractive target data ({self.config.extractive_preparation_method})')
 
                 with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_extractive_target, batches)
-                    p.join()
 
                 prepared_ext_target = []
                 for result in results:
@@ -267,7 +265,6 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
 
                 with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_guidance_extractive, batches)
-                    p.join()
 
                 prepared_guidance_ext = []
                 for result in results:
@@ -284,7 +281,6 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
 
                 with mp.Pool(min(self.config.max_cpus, mp.cpu_count())) as p:
                     results = p.map(self.prepare_guidance_keywords, batches)
-                    p.join()
 
                 prepared_guidance_key = []
                 for result in results:

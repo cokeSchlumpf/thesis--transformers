@@ -393,7 +393,13 @@ class Bert(nn.Module):
         self.model.train()
 
     def forward(self, x: dict):
-        outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
+        if self.config.base_model_name.startswith('bert-'):
+            outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
+        elif self.config.base_model_name.startswith('distilbert-'):
+            outputs = self.model(x['token_ids'])
+        else:
+            raise Exception(f"unknown model type `{self.config.base_model_name}`")
+
         return outputs.last_hidden_state
 
 

@@ -13,7 +13,7 @@ from .summarizer import GuidedAbsSum, GuidedExtSum
 
 
 def train_extractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig()
+    cfg = GuidedSummarizationConfig.apply('mlsum', 'distilbert', True, extractive_preparation_method='oracle')
     dat = GuidedSummarizationDataModule(cfg, is_extractive=True)
 
     if checkpoint_path is None:
@@ -25,7 +25,7 @@ def train_extractive(checkpoint_path: Optional[str] = None):
 
 
 def train_abstractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig()
+    cfg = GuidedSummarizationConfig.apply('mlsum', 'distilbert', False, guidance_signal='extractive', extractive_preparation_method='oracle')
     dat = GuidedSummarizationDataModule(cfg)
 
     if checkpoint_path is None:

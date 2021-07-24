@@ -4,7 +4,6 @@ from typing import Optional, Tuple
 
 
 class GuidedSummarizationConfig(BaseModel):
-
     """
     Indicates whether executing in debug mode, if true, GPU will be disabled an data loaders are not working
     parallelized to avoid issues with PyCharm debugger.
@@ -16,7 +15,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     data_raw_path: str = './data/raw/mlsum'
 
-    data_prepared_path: str = './data/prepared/mlsum'
+    data_prepared_path: str = './data/prepared/mlsum/bert-base-german-dbmdz-uncased'
 
     """
     Pre-preprocessing configuration
@@ -130,3 +129,63 @@ class GuidedSummarizationConfig(BaseModel):
     Maximum number of parallel processes during preparation.
     """
     max_cpus: int = 8
+
+    @staticmethod
+    def apply(
+            dataset: str,
+            base_model: str,
+            extractive: bool,
+            guidance_signal: Optional[str] = None,
+            extractive_preparation_method: str = 'oracle',
+            debug: bool = False) -> 'GuidedSummarizationConfig':
+        """
+        Helper method to create configuration class.
+
+        :param dataset The name of the dataset `cnn_dailymail`, `mlsum` or `swisstext`.
+        :param base_model The base model to use for the experiment (`bert` or `distilbert`)
+        :param extractive Whether the configuration is for extractive model or not.
+        :param guidance_signal The guidance signal used for the experiment. None, `extractive` or `keywords`.
+        :param extractive_preparation_method The method to be used to prepare extractive summarization target.
+        :param debug Whether it is a debug run or not.
+        """
+
+        if dataset == 'cnn_dailymail':
+            lang = 'en'
+        elif dataset == 'mlsum':
+            lang = 'de'
+        elif dataset == 'swisstext':
+            lang = 'de'
+        else:
+            raise Exception('unknown dataset')
+
+        if base_model == 'bert' and lang == 'en':
+            mdl = 'bert-base-uncased'
+        elif base_model == 'bert' and lang == 'de':
+            mdl = 'bert-base-german-dbmdz-uncased'
+        elif base_model == 'distilbert' and lang == 'en':
+            mdl = 'distilbert-base-cased'
+        elif base_model == 'distilbert' and lang == 'de':
+            mdl = 'distilbert-base-german-cased'
+        else:
+            raise Exception('Unknown model/language combination.')
+
+        cfg = GuidedSummarizationConfig()
+        cfg.is_debug = debug
+        cfg.base_model_name = mdl
+        cfg.data_raw_path = f'./data/raw/{dataset}'
+        cfg.data_prepared_path = f'./data/prepared/{dataset}{"_debug" if debug else ""}/{mdl}'
+        cfg.spacy_model = 'en_core_web_sm' if lang == 'en' else 'de_core_news_md'
+
+        if extractive:
+            cfg.accumulate_grad_batches = 1
+            cfg.encoder_optim_warmup_steps = 10000
+            cfg.decoder_optim_warmup_steps = 8000
+        else:
+            cfg.accumulate_grad_batches = 4
+            cfg.encoder_optim_warmup_steps = 20000
+            cfg.decoder_optim_warmup_steps = 10000
+
+        cfg.guidance_method = guidance_signal
+        cfg.extractive_preparation_method = extractive_preparation_method
+
+        return cfg
