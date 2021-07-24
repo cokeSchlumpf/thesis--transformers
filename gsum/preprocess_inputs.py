@@ -1,7 +1,7 @@
 from lib.oracle_summary import extract_oracle_summary
 from lib.text_preprocessing import clean_html, preprocess_text, simple_punctuation_only, to_lower
 from lib.text_similarity import most_similar_sentences
-from lib.textrank import get_keywords
+from lib.textrank import get_keywords, get_summary
 from lib.utils import extract_sentence_tokens
 from transformers import PreTrainedTokenizer
 from typing import List
@@ -284,7 +284,8 @@ def preprocess_input_sample(
         torch.Tensor(cls_mask).type(torch.IntTensor))
 
 
-def preprocess_guidance_keywords(source: str, lang: spacy.Language, tokenizer: PreTrainedTokenizer, max_length: int = 512) -> GuidedSummarizationInput:
+def preprocess_guidance_keywords(source: str, lang: spacy.Language, tokenizer: PreTrainedTokenizer, max_length: int = 512,
+                                 max_input_sentences: int = 128, min_sentence_tokens: int = 5) -> GuidedSummarizationInput:
     """
     Prepares a guidance signal by generating keywords from the source.
 
@@ -292,6 +293,8 @@ def preprocess_guidance_keywords(source: str, lang: spacy.Language, tokenizer: P
     :param lang The expected language of the text.
     :param tokenizer The tokenizer used for tokenizing the input signal.
     :param max_length The maximum length expected for the guidance signal.
+    :param max_input_sentences The max. number of expected input sentences.
+    :param min_sentence_tokens The minimum number of tokens in a sentence to be included.
 
     Returns:
         The encoded guidance signal.
@@ -299,7 +302,27 @@ def preprocess_guidance_keywords(source: str, lang: spacy.Language, tokenizer: P
 
     keywords = get_keywords(source, lang.lang)  # TODO map spaCy language to 'en' or 'de'
     keywords = ' '.join(keywords)
-    return preprocess_input_sample(keywords, lang, tokenizer, max_length)
+    return preprocess_input_sample(keywords, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)
+
+
+def preprocess_guidance_extractive(source: str, lang: spacy.Language, tokenizer: PreTrainedTokenizer, max_length: int = 512,
+                                   max_input_sentences: int = 128, min_sentence_tokens: int = 5) -> GuidedSummarizationInput:
+    """
+    Prepares a guidance signal by creating an un-supervised extractive summary using textrank.
+
+    :param source The source text.
+    :param lang The expected language of the text.
+    :param tokenizer The tokenizer used for tokenizing the input signal.
+    :param max_length The maximum length expected for the guidance signal.
+    :param max_input_sentences The max. number of expected input sentences.
+    :param min_sentence_tokens The minimum number of tokens in a sentence to be included.
+
+    Returns:
+        The encoded guidance signal.
+    """
+
+    summary = get_summary(source, language=lang.lang)  # TODO map spaCy language to 'en' or 'de'
+    return preprocess_input_sample(summary, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)
 
 
 def preprocess_guidance_extractive_training(source: str, target: str, lang: spacy.language, tokenizer: PreTrainedTokenizer,

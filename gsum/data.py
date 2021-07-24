@@ -91,7 +91,18 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         # Pre-processes input sequences for prediction
         #
         x_prepared = [preprocess_input_sample(sample, self.lang, self.tokenizer, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
-        dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
+
+        if self.config.guidance_method is None:
+            dataset = GuidedSummarizationDataset(x_prepared, x_prepared)
+        elif self.config.guidance_method == 'keywords':
+            x_guidance = [preprocess_guidance_keywords(sample, self.lang, self.tokenizer, self.config.max_input_length) for sample in x]
+            dataset = GuidedSummarizationDataset(x_prepared, x_guidance)
+        elif self.config.guidance_method == 'extractive':
+            x_guidance = [preprocess_guidance_extractive(sample, self.lang, self.tokenizer, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
+            dataset = GuidedSummarizationDataset(x_prepared, x_guidance)
+        else:
+            raise Exception(f"Invalid guidance signal `{self.config.guidance_method}`")
+
         return DataLoader(dataset, num_workers=0)
 
     def preprocess_target(self, x: List[str]) -> DataLoader:

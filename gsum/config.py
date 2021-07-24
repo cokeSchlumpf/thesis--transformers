@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class GuidedSummarizationConfig(BaseModel):
@@ -124,7 +124,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Guidance configuration
     """
-    guidance_method: str = 'extractive'  # `extractive`, `keywords`
+    guidance_method: Optional[str] = 'extractive'  # `extractive`, `keywords`
 
     """
     Maximum number of parallel processes during preparation.

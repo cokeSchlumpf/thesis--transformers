@@ -164,8 +164,7 @@ class GuidedAbsSum(pl.LightningModule):
         self.gen.to(self.device)
 
         top_vec, gui_vec = self.enc(x_input)
-        state = self.dec.create_decoder_state(x_input['token_ids'], x_input[
-            'token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_input['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
         dec_out, state = self.dec(target, top_vec, gui_vec, state)
         output = self.gen(dec_out)
 
@@ -414,8 +413,7 @@ class AbsSumTransformerEncoder(nn.Module):
             """
             my_pos_embeddings = nn.Embedding(config.max_input_length, self.bert.config.hidden_size)
             my_pos_embeddings.weight.data[:512] = self.bert.embeddings.position_embeddings.weight.data
-            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None,
-                                                  :].repeat(config.max_input_length - 512, 1)
+            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_input_length - 512, 1)
             self.bert.embeddings.position_embeddings = my_pos_embeddings
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
@@ -426,7 +424,7 @@ class AbsSumTransformerEncoder(nn.Module):
             self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
             batch_first=True)
 
-    def forward(self, x_input: dict):
+    def forward(self, x_input: dict, x_guidance: dict):
         """
         Encodes the input provided by `x_input`. `x_input` is a dict containing `token_ids` and `attention_mask` as produced by
         Bert Tokenizer. Additionally `segment_ids` should be provided to mark different sentences, as described by GSum Paper.
@@ -434,21 +432,18 @@ class AbsSumTransformerEncoder(nn.Module):
         `segment_ids` is a tensor of shape [BATCH_SIZE x INPUT_SEQUENCE_LENGTH]
 
         :param x_input: The tokenized input sequence.
+        :param x_guidance: The encoded guidance signal.
 
         Returns
             Encoded input sequence; Tensor of shape [BATCH_SIZE x INPUT_SEQUENCE_LENGTH x BERT_HIDDEN_SIZE]
         """
         input_vec = self.bert(x_input['token_ids'], attention_mask=x_input['attention_mask'], token_type_ids=x_input['segment_ids'])
         input_vec = self.input_transformer_encoder(input_vec['last_hidden_state'], src_key_padding_mask=(1 - x_input['attention_mask']).bool())
-        """
-        TODO: Implement guidance signal
-        """
-        """
-        guidance_vec = self.bert(**x_guidance)
-        guidance_vec = self.guidance_transformer_encoder(guidance_vec, 1 - x_guidance['attention_mask'])
-        """
 
-        return input_vec, input_vec
+        guidance_vec = self.bert(x_guidance['token_ids'], attention_mask=x_guidance['attention_mask'], token_type_ids=x_guidance['segment_ids'])
+        guidance_vec = self.guidance_transformer_encoder(guidance_vec['last_hidden_state'], src_key_padding_mask=(1 - x_guidance['attention_mask']).bool())
+
+        return input_vec, guidance_vec
 
 
 class ExtTransformerEncoderLayer(nn.Module):
