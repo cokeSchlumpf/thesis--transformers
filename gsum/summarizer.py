@@ -12,9 +12,11 @@ from torch import nn
 from transformers import AutoModel
 from typing import Callable, List, Optional, Tuple
 
+from lib.text_preprocessing import clean_html, preprocess_text, simple_punctuation_only, to_lower
+from lib.utils import extract_sentence_tokens
+
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
-
 from .preprocess_inputs import TARGET_BOS, TARGET_EOS, TARGET_SEP
 
 
@@ -54,7 +56,7 @@ class GuidedAbsSum(pl.LightningModule):
         # TODO: Weights initialization?
         #
 
-    def forward(self, x: List[str]) -> Tuple[List['BeamSearchResult'], float]:
+    def forward(self, x: List[str]) -> Tuple[List['SummarizationResult'], float]:
         self.enc.to(self.device)
         self.dec.to(self.device)
         self.gen.to(self.device)
@@ -74,12 +76,20 @@ class GuidedAbsSum(pl.LightningModule):
             'segment_ids': segment_ids
         }
 
-        x_guidance_batch = x_input_batch
+        token_ids = torch.cat([p['x_guidance']['token_ids'] for p in x_prepared]).to(self.device)
+        attention_masks = torch.cat([p['x_guidance']['attention_mask'] for p in x_prepared]).to(self.device)
+        segment_ids = torch.cat([p['x_guidance']['segment_ids'] for p in x_prepared]).to(self.device)
+
+        x_guidance_batch = {
+            'token_ids': token_ids,
+            'attention_mask': attention_masks,
+            'segment_ids': segment_ids
+        }
 
         #
         # Encoder
         #
-        top_vec, gui_vec = self.enc(x_input_batch)
+        top_vec, gui_vec = self.enc(x_input_batch, x_guidance_batch)
 
         #
         # Decoder
@@ -155,7 +165,7 @@ class GuidedAbsSum(pl.LightningModule):
         end = time.time()
         return [s.results[0] for s in beam_search], end - start
 
-    def predict(self, x_input: dict, target: torch.Tensor):
+    def predict(self, x_input: dict, x_guidance: dict, target: torch.Tensor):
         """
         TODO: Document
         """
@@ -252,17 +262,47 @@ class GuidedExtSum(pl.LightningModule):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, x: List[str]):
-        prepared_data = self.data_module.preprocess(x)
-        results = []
+    def forward(self, x: List[str], threshold: float = 0.7) -> Tuple[List['SummarizationResult'], float]:
+        start = time.time()
 
-        # TODO: correct implementation
+        #
+        # prepare batch
+        #
+        x_prepared = list([p for p in self.data_module.preprocess(x)])
+        token_ids = torch.cat([p['x_input']['token_ids'] for p in x_prepared]).to(self.device)
+        attention_mask = torch.cat([p['x_input']['attention_mask'] for p in x_prepared]).to(self.device)
+        segment_ids = torch.cat([p['x_input']['segment_ids'] for p in x_prepared]).to(self.device)
+        cls_indices = torch.cat([p['x_input']['cls_indices'] for p in x_prepared]).to(self.device)
+        cls_mask = torch.cat([p['x_input']['cls_mask'] for p in x_prepared]).to(self.device)
 
-        for batch in iter(prepared_data):
-            scores = self.predict(batch['x_input'])
-            results += [scores]
+        x_input_batch = {
+            'token_ids': token_ids,
+            'attention_mask': attention_mask,
+            'segment_ids': segment_ids,
+            'cls_indices': cls_indices,
+            'cls_mask': cls_mask
+        }
 
-        return results
+        scores = self.predict(x_input_batch)
+        pipeline = [simple_punctuation_only, to_lower]
+        result = []
+
+        for i in range(scores.shape[0]):
+            sample = x[i]
+            cleaned = preprocess_text(sample, self.data_module.lang, pipeline, [clean_html])
+            sentences = extract_sentence_tokens(self.data_module.lang, cleaned)
+            sentences = filter(lambda s: len(s) > self.config.min_sentence_tokens, sentences)
+            sentences = map(lambda s: ' '.join(s), sentences)
+            sentences = list(sentences)
+
+            sentences_selected = []
+            for j in scores[i]:
+                sentences_selected.append(sentences[j])
+
+            result.append(SimpleSummarizationResult('. '.join(sentences_selected)))
+
+        end = time.time()
+        return result, end - start
 
     def predict(self, x_input: dict):
         """
@@ -973,7 +1013,22 @@ class BeamSearchState:
         self.results = self.results[:self.k]
 
 
-class BeamSearchResult:
+class SummarizationResult:
+
+    def text(self) -> str:
+        pass
+
+
+class SimpleSummarizationResult(SummarizationResult):
+
+    def __init__(self, text: str):
+        self.txt = text
+
+    def text(self) -> str:
+        return self.txt
+
+
+class BeamSearchResult(SummarizationResult):
 
     def __init__(self, token_ids: torch.Tensor, tokens: List[str], probs: List[float],
                  prob_cache: Optional[float] = None, max_length: int = 256):
