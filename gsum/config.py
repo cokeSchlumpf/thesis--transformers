@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, parse_file_as
 
 from typing import Optional, Tuple
 
@@ -129,6 +129,10 @@ class GuidedSummarizationConfig(BaseModel):
     Maximum number of parallel processes during preparation.
     """
     max_cpus: int = 8
+
+    @staticmethod
+    def from_file(file: str) -> 'GuidedSummarizationConfig':
+        return parse_file_as(GuidedSummarizationConfig, file)
 
     @staticmethod
     def apply(

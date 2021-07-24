@@ -1,4 +1,4 @@
-from gsum import run_extractive
+from gsum.train import train_extractive
 
 if __name__ == "__main__":
-    run_extractive()
+    train_extractive()

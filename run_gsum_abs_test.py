@@ -1,4 +1,4 @@
-from gsum import run_test
+from gsum.scoring import run_scoring_abs
 
 if __name__ == "__main__":
-    run_test()
+    run_scoring_abs()

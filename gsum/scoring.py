@@ -4,15 +4,16 @@ import torch
 from lib.utils import read_file_to_object, write_object_to_file
 from pathlib import Path
 from rouge_score import rouge_scorer
+from typing import Optional
 
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
-from .summarizer import GuidedAbsSum
+from .summarizer import GuidedAbsSum, GuidedExtSum
 
 
-def run_scoring(
+def run_scoring_abs(
         checkpoint_path: str = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt',
-        max_samples: int = 900):
+        max_samples: int = 1000):
     """
     Executes inference with model from a given checkpoint.
 
@@ -26,6 +27,28 @@ def run_scoring(
     cfg = GuidedSummarizationConfig()
     dat = GuidedSummarizationDataModule(cfg)
     mdl = GuidedAbsSum.load_from_checkpoint(str(checkpoint_path), cfg=cfg, data_module=dat)
+    run_scoring(mdl, cfg, dat, scores_path, max_samples)
+
+
+def run_scoring_ext(
+        checkpoint_path: str = './data/trained/2021-07-22-0756/gsum-abs-epoch=13-val_loss=133.29.ckpt',
+        cfg_path: Optional[str] = './data/trained/2021-07-22-0756/config.json',
+        max_samples: int = 1000):
+
+    checkpoint_path = Path(checkpoint_path)
+    scores_path = Path(f'{checkpoint_path.parent}/scores.pkl')
+
+    if cfg_path is not None:
+        cfg = GuidedSummarizationConfig.from_file(cfg_path)
+    else:
+        cfg = GuidedSummarizationConfig.apply()
+
+    dat = GuidedSummarizationDataModule(cfg)
+    mdl = GuidedExtSum.load_from_checkpoint(str(checkpoint_path), cfg=cfg, data_module=dat)
+    run_scoring(mdl, cfg, dat, scores_path, max_samples)
+
+
+def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: GuidedSummarizationDataModule, scores_path: Path, max_samples: int = 1000):
     mdl.freeze()
     mdl.to('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -85,7 +108,8 @@ def calculate_rouge_scores(df: pd.DataFrame, rouge_n: int = 3) -> pd.DataFrame:
         result_dict[f'{r}f'] = []
 
     for idx, row in df.iterrows():
-        row_scores = scorer.score(row['summary'], row['summary_predicted'])  # TODO: Add preprocessing to have similar text quality?
+        row_scores = scorer.score(row['summary'],
+                                  row['summary_predicted'])  # TODO: Add preprocessing to have similar text quality?
 
         for r in rouge_variants:
             p = r.replace('rouge', 'r')

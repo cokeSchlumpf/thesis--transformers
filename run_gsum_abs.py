@@ -1,4 +1,4 @@
-from gsum import run_abstractive
+from gsum.train import train_abstractive
 
 if __name__ == "__main__":
-    run_abstractive()
+    train_abstractive()
