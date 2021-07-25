@@ -25,7 +25,7 @@ def train_extractive(checkpoint_path: Optional[str] = None):
 
 
 def train_abstractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('mlsum', 'distilbert', False, guidance_signal='extractive', extractive_preparation_method='oracle')
+    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
 
     if checkpoint_path is None:
@@ -54,7 +54,7 @@ def train(mdl: pl.LightningModule, cfg: GuidedSummarizationConfig, dat: GuidedSu
     trainer = pl.Trainer(
         gpus=0 if cfg.is_debug else 1,
         default_root_dir=training_path,
-        val_check_interval=0.1,
+        val_check_interval=1 if cfg.is_debug else 0.1,
         accumulate_grad_batches=cfg.accumulate_grad_batches,
         callbacks=[checkpoint_callback])
 

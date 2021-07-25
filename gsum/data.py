@@ -21,7 +21,7 @@ class GuidedSummarizationDataset(Dataset):
 
     def __init__(self,
                  x_input: List[GuidedSummarizationInput],
-                 x_guidance: any,
+                 x_guidance: List[GuidedSummarizationInput],
                  y: Optional[Union[List[GuidedSummarizationTarget], List[GuidedSummarizationExtractiveTarget]]] = None):
 
         self.x_input = x_input
@@ -35,11 +35,13 @@ class GuidedSummarizationDataset(Dataset):
         if self.y is not None:
             result = {
                 'x_input': self.x_input[idx].to_dict(),
+                'x_guidance': self.x_guidance[idx].to_dict(),
                 'y': self.y[idx].to_dict()
             }
         else:
             result = {
-                'x_input': self.x_input[idx].to_dict()
+                'x_input': self.x_input[idx].to_dict(),
+                'x_guidance': self.x_guidance[idx].to_dict()
             }
 
         return result
@@ -132,7 +134,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
 
         path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + str(batch_idx) + '.guidance.ext.' + self.config.extractive_preparation_method + '.pkl'
         result = [
-            preprocess_guidance_extractive_training(row['text'], row['summary'], self.lang, self.tokenizer, self.config.max_input_sentences, self.config.max_input_sentences, method=self.config.extractive_preparation_method)
+            preprocess_guidance_extractive_training(row['text'], row['summary'], self.lang, self.tokenizer, self.config.max_input_signal_length, self.config.max_input_sentences, self.config.min_sentence_tokens, method=self.config.extractive_preparation_method)
             for idx, row in tqdm(df.iterrows(), total=len(df.index))]
         write_object_to_file(path, result)
         return path
@@ -144,7 +146,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         dataset, batch_idx, df = params
 
         path = self.config.data_prepared_path + '/' + dataset + '.prepared.' + str(batch_idx) + '.guidance.key.pkl'
-        result = [preprocess_guidance_keywords(row['text'], self.lang, self.tokenizer, self.config.max_input_length) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+        result = [preprocess_guidance_keywords(row['text'], self.lang, self.tokenizer, self.config.max_input_signal_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
         write_object_to_file(path, result)
         return path
 
@@ -193,7 +195,11 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_source_df = pd.read_csv(raw_source_path)
         raw_target_df = pd.read_csv(raw_target_path)
 
-        raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)  # [:200]  # TODO
+        if self.config.is_debug:
+            raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)[:200]
+        else:
+            raw_data = pd.concat([raw_source_df, raw_target_df], axis=1)
+
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
@@ -255,7 +261,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
                 write_object_to_file(prepared_ext_target_path, prepared_ext_target)
 
         #
-        # Prepare extractive summary as guidance signal
+        # Prepare summary as guidance signal
         #
         if self.config.guidance_method == 'extractive':
             prepared_guidance_ext_path = self.config.data_prepared_path + '/' + dataset + '.prepared.guidance.ext.' + self.config.extractive_preparation_method + '.pkl'
@@ -309,6 +315,15 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         else:
             prepared_target: List[GuidedSummarizationTarget] = read_file_to_object(prepared_target_path)
 
+        if self.config.guidance_method == 'extractive':
+            prepared_guidance_ext_path = self.config.data_prepared_path + '/' + dataset + '.prepared.guidance.ext.' + self.config.extractive_preparation_method + '.pkl'
+            prepared_guidance: List[GuidedSummarizationInput] = read_file_to_object(prepared_guidance_ext_path)
+        elif self.config.guidance_method == 'keywords':
+            prepared_guidance_key_path = self.config.data_prepared_path + '/' + dataset + '.prepared.guidance.key.pkl'
+            prepared_guidance: List[GuidedSummarizationInput] = read_file_to_object(prepared_guidance_key_path)
+        else:
+            prepared_guidance = prepared_source
+
         #
         # Remove empty samples as they would lead to errors during training.
         #
@@ -322,6 +337,8 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
                 remove_indices.append(i)
             elif not self.is_extractive and torch.sum(prepared_target[i].to_dict()['token_ids']) == 0:
                 remove_indices.append(i)
+            elif not self.is_extractive and torch.sum(prepared_guidance[i].to_dict()['token_ids']) == 0:
+                remove_indices.append(i)
 
         if len(remove_indices) > 0:
             print(f'Removing indices due to invalid samples {remove_indices} ...')
@@ -329,8 +346,14 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         for i in reversed(remove_indices):
             del prepared_target[i]
             del prepared_source[i]
+            del prepared_guidance[i]
 
-        return GuidedSummarizationDataset(prepared_source, 0, prepared_target)
+        assert len(prepared_source) == len(prepared_guidance)
+        assert len(prepared_source) == len(prepared_target)
+
+        print(f'Prepared {len(prepared_source)} samples ...')
+
+        return GuidedSummarizationDataset(prepared_source, prepared_guidance, prepared_target)
 
     def train_dataloader(self) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
         if self.train is None:
@@ -376,6 +399,12 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         batch['x_input']['attention_mask'] = batch['x_input']['attention_mask'].to(device)
         batch['x_input']['cls_indices'] = batch['x_input']['cls_indices'].to(device)
         batch['x_input']['cls_mask'] = batch['x_input']['cls_mask'].to(device)
+
+        batch['x_guidance']['token_ids'] = batch['x_guidance']['token_ids'].to(device)
+        batch['x_guidance']['segment_ids'] = batch['x_guidance']['segment_ids'].to(device)
+        batch['x_guidance']['attention_mask'] = batch['x_guidance']['attention_mask'].to(device)
+        batch['x_guidance']['cls_indices'] = batch['x_guidance']['cls_indices'].to(device)
+        batch['x_guidance']['cls_mask'] = batch['x_guidance']['cls_mask'].to(device)
 
         if self.is_extractive:
             batch['y']['sentence_ids'] = batch['y']['sentence_ids'].to(device)

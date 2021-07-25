@@ -40,6 +40,11 @@ class GuidedSummarizationConfig(BaseModel):
     base_model_name: str = 'bert-base-german-dbmdz-uncased'  # 'bert-base-uncased'
 
     """
+    Reuse a pretrained Bert module from another (usually extractive) taining
+    """
+    base_model_pretrained: Optional[str] = None
+
+    """
     The maximum length (token count) for input sequences.
     """
     max_input_length: int = 256
@@ -52,7 +57,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length for signal sequences.
     """
-    max_input_signal_length: int = 256
+    max_input_signal_length: int = 64
 
     """
     The maximum number of sentences to be considered for document embeddings.
@@ -141,7 +146,8 @@ class GuidedSummarizationConfig(BaseModel):
             extractive: bool,
             guidance_signal: Optional[str] = None,
             extractive_preparation_method: str = 'oracle',
-            debug: bool = False) -> 'GuidedSummarizationConfig':
+            debug: bool = False,
+            base_model_pretrained: Optional[str] = None) -> 'GuidedSummarizationConfig':
         """
         Helper method to create configuration class.
 
@@ -151,6 +157,7 @@ class GuidedSummarizationConfig(BaseModel):
         :param guidance_signal The guidance signal used for the experiment. None, `extractive` or `keywords`.
         :param extractive_preparation_method The method to be used to prepare extractive summarization target.
         :param debug Whether it is a debug run or not.
+        :param base_model_pretrained An optional pre-trained base model (BERT part) which should be used. This would replace the other configure base_model. Only valid for abstractive training (base model then is usually pre-trained with extractive model)
         """
 
         if dataset == 'cnn_dailymail':
@@ -172,6 +179,8 @@ class GuidedSummarizationConfig(BaseModel):
             mdl = 'distilbert-base-german-cased'
         elif base_model == 'electra' and lang == 'de':
             mdl = 'german-nlp-group/electra-base-german-uncased'
+        elif base_model == 'multilingual':
+            mdl = 'bert-base-multilingual-uncased'
         else:
             raise Exception('Unknown model/language combination.')
 
@@ -186,10 +195,17 @@ class GuidedSummarizationConfig(BaseModel):
             cfg.accumulate_grad_batches = 1
             cfg.encoder_optim_warmup_steps = 10000
             cfg.decoder_optim_warmup_steps = 8000
+            cfg.batch_sizes = (36, 20, 36, 50)
         else:
             cfg.accumulate_grad_batches = 4
             cfg.encoder_optim_warmup_steps = 20000
             cfg.decoder_optim_warmup_steps = 10000
+            cfg.batch_sizes = (20, 20, 20, 25)
+            cfg.base_model_pretrained = base_model_pretrained
+
+        if base_model == 'distilbert':
+            cfg.encoder_optim_lr = 2e-3
+            cfg.decoder_optim_lr = 0.05
 
         cfg.guidance_method = guidance_signal
         cfg.extractive_preparation_method = extractive_preparation_method

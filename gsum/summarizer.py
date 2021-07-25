@@ -34,23 +34,23 @@ class GuidedAbsSum(pl.LightningModule):
         self.data_module = data_module
 
         # Encoder
-        self.enc = AbsSumTransformerEncoder(cfg)  # AbsTransformerEncoder
+        self.enc = AbsSumTransformerEncoder(cfg, data_module)  # AbsTransformerEncoder
 
         # Shared embedding layer
-        embedding = nn.Embedding(self.enc.bert.config.vocab_size, self.enc.bert.config.hidden_size, padding_idx=0)
-        embedding.weight = copy.deepcopy(self.enc.bert.embeddings.word_embeddings.weight)
+        embedding = nn.Embedding(self.enc.bert.model.config.vocab_size, self.enc.bert.model.config.hidden_size, padding_idx=0)
+        embedding.weight = copy.deepcopy(self.enc.bert.model.embeddings.word_embeddings.weight)
 
         # Decoder
         self.dec = AbsSumTransformerDecoder(
             cfg, cfg.decoder_layers, cfg.decoder_dim, cfg.decoder_heads, cfg.decoder_ff_dim, cfg.decoder_dropout,
-            embedding, self.enc.bert.config.vocab_size)
+            embedding, self.enc.bert.model.config.vocab_size)
 
         # Generator
         self.gen = nn.Sequential(
-            nn.Linear(self.enc.bert.config.hidden_size, self.enc.bert.config.vocab_size),
+            nn.Linear(self.enc.bert.model.config.hidden_size, self.enc.bert.model.config.vocab_size),
             nn.LogSoftmax(dim=-1))
 
-        self.loss_func = LabelSmoothingLoss(cfg.label_smoothing, self.enc.bert.config.vocab_size, 0)
+        self.loss_func = LabelSmoothingLoss(cfg.label_smoothing, self.enc.bert.model.config.vocab_size, 0)
 
         #
         # TODO: Weights initialization?
@@ -174,7 +174,7 @@ class GuidedAbsSum(pl.LightningModule):
         self.gen.to(self.device)
 
         top_vec, gui_vec = self.enc(x_input, x_guidance)
-        state = self.dec.create_decoder_state(x_input['token_ids'], x_guidance['token_ids'])  # TODO: Is this actually needed in state? I think not... Replace 2nd parameter with guidance signal.
+        state = self.dec.create_decoder_state(x_input['token_ids'], x_guidance['token_ids'])
         dec_out, state = self.dec(target, top_vec, gui_vec, state)
         output = self.gen(dec_out)
 
@@ -182,13 +182,14 @@ class GuidedAbsSum(pl.LightningModule):
 
     def shared_step(self, step, batch, batch_idx):
         x_input = batch['x_input']
+        x_guidance = batch['x_guidance']
         target = batch['y']['token_ids']
-        dec_out, state = self.predict(x_input, target)
+        dec_out, state = self.predict(x_input, x_guidance, target)
 
         target_shifted = target.roll(-1, 1)
         target_shifted[:, target_shifted.shape[1] - 1] = 0
 
-        loss = self.loss_func(dec_out.view(-1, self.enc.bert.config.vocab_size), target_shifted.view(-1))
+        loss = self.loss_func(dec_out.view(-1, self.enc.bert.model.config.vocab_size), target_shifted.view(-1))
 
         if torch.isnan(loss):
             raise RuntimeError(f'Loss function returned NaN result in step {step} for batch {batch_idx}')
@@ -206,15 +207,15 @@ class GuidedAbsSum(pl.LightningModule):
         return self.shared_step('test', batch, batch_idx)
 
     def configure_optimizers(self):
-        enc_params = [param for name, param in self.named_parameters() if name.startswith('enc.bert')]
+        enc_params = [param for name, param in self.named_parameters() if name.startswith('enc.bert.model')]
         enc_optim = torch.optim.Adam(enc_params, self.config.encoder_optim_lr, self.config.encoder_optim_beta,
                                      self.config.encoder_optim_eps)
 
-        dec_params = [param for name, param in self.named_parameters() if not name.startswith('enc.bert')]
+        dec_params = [param for name, param in self.named_parameters() if not name.startswith('enc.bert.model')]
         dec_optim = torch.optim.Adam(dec_params, self.config.decoder_optim_lr, self.config.decoder_optim_beta,
                                      self.config.decoder_optim_eps)
 
-        return [enc_optim, dec_optim]
+        return [dec_optim, enc_optim]
 
     def optimizer_step(
             self,
@@ -227,7 +228,7 @@ class GuidedAbsSum(pl.LightningModule):
             using_native_amp: bool = None,
             using_lbfgs: bool = None) -> None:
 
-        if optimizer_idx == 0:
+        if optimizer_idx == 1:
             lr = self.config.encoder_optim_lr
             warmup = self.config.encoder_optim_warmup_steps
         else:
@@ -242,6 +243,40 @@ class GuidedAbsSum(pl.LightningModule):
             pg['lr'] = lr
 
         optimizer.step(closure=optimizer_closure)
+
+    def toggle_optimizer(self, optimizer: torch.optim.Optimizer, optimizer_idx: int):
+        """
+        Makes sure only the gradients of the current optimizer's parameters are calculated
+        in the training step to prevent dangling gradients in multiple-optimizer setup.
+
+        .. note:: Only called when using multiple optimizers
+
+        Args:
+            optimizer: Current optimizer used in training_loop
+            optimizer_idx: Current optimizer idx in training_loop
+        """
+
+        # Iterate over all optimizer parameters to preserve their `requires_grad` information
+        # in case these are pre-defined during `configure_optimizers`
+        param_requires_grad_state = self._param_requires_grad_state
+        for opt in self.optimizers(use_pl_optimizer=False):
+            for group in opt.param_groups:
+                for param in group['params']:
+                    # If a param already appear in param_requires_grad_state, continue
+                    if param not in param_requires_grad_state:
+                        param_requires_grad_state[param] = param.requires_grad
+
+                    param.requires_grad = False
+
+        # Then iterate over the current optimizer's parameters and set its `requires_grad`
+        # properties accordingly
+        for group in optimizer.param_groups:
+            for param in group['params']:
+                param.requires_grad = param_requires_grad_state[param]
+        self._param_requires_grad_state = param_requires_grad_state
+
+    def optimizer_zero_grad(self, epoch: int, batch_idx: int, optimizer: torch.optim.Optimizer, optimizer_idx: int):
+        optimizer.zero_grad(set_to_none=True)
 
 
 class GuidedExtSum(pl.LightningModule):
@@ -402,8 +437,7 @@ class ExtSumTransformerEncoder(nn.Module):
         # encoder_layer = nn.TransformerEncoderLayer(d_model, heads, dim_ff, dropout, batch_first=True)
         # self.encoder = nn.TransformerEncoder(encoder_layer, layers)
         self.layers = layers
-        self.encoder_layers = nn.ModuleList(
-            [ExtTransformerEncoderLayer(d_model, heads, dim_ff, dropout) for _ in range(layers)])
+        self.encoder_layers = nn.ModuleList([ExtTransformerEncoderLayer(d_model, heads, dim_ff, dropout) for _ in range(layers)])
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         self.wo = nn.Linear(d_model, 1, bias=True)
         self.sigmoid = nn.Sigmoid()
@@ -431,17 +465,16 @@ class Bert(nn.Module):
 
     def __init__(self, cfg: GuidedSummarizationConfig):
         super(Bert, self).__init__()
-        self.config = cfg
+        self.cfg = cfg
         self.model = AutoModel.from_pretrained(cfg.base_model_name)
-        self.model.train()
 
     def forward(self, x: dict):
-        if self.config.base_model_name.startswith('bert-') or ('electra' in self.config.base_model_name):
+        if self.cfg.base_model_name.startswith('bert-') or ('electra' in self.cfg.base_model_name):
             outputs = self.model(x['token_ids'], attention_mask=x['attention_mask'], token_type_ids=x['segment_ids'])
-        elif self.config.base_model_name.startswith('distilbert-'):
+        elif self.cfg.base_model_name.startswith('distilbert-'):
             outputs = self.model(x['token_ids'])
         else:
-            raise Exception(f"unknown model type `{self.config.base_model_name}`")
+            raise Exception(f"unknown model type `{self.cfg.base_model_name}`")
 
         return outputs.last_hidden_state
 
@@ -451,26 +484,32 @@ class AbsSumTransformerEncoder(nn.Module):
     A wrapper for the Bert-based based encoder part of the Guided Summarization model.
     """
 
-    def __init__(self, config: GuidedSummarizationConfig):
+    def __init__(self, config: GuidedSummarizationConfig, data_module: GuidedSummarizationDataModule):
         super(AbsSumTransformerEncoder, self).__init__()
-        self.bert = AutoModel.from_pretrained(config.base_model_name)
 
-        if config.max_input_length > 512:
-            """
-            If maximum sequence length is longer than BERT's default max sequence length,
-            then we need to extend the positional embeddings layer of the model.
-            """
-            my_pos_embeddings = nn.Embedding(config.max_input_length, self.bert.config.hidden_size)
-            my_pos_embeddings.weight.data[:512] = self.bert.embeddings.position_embeddings.weight.data
-            my_pos_embeddings.weight.data[512:] = self.bert.embeddings.position_embeddings.weight.data[-1][None, :].repeat(config.max_input_length - 512, 1)
-            self.bert.embeddings.position_embeddings = my_pos_embeddings
+        if config.base_model_pretrained is None:
+            self.bert = Bert(config)
+
+            if config.max_input_length > 512:
+                """
+                If maximum sequence length is longer than BERT's default max sequence length,
+                then we need to extend the positional embeddings layer of the model.
+                """
+                my_pos_embeddings = nn.Embedding(config.max_input_length, self.bert.config.hidden_size)
+                my_pos_embeddings.weight.data[:512] = self.bert.model.embeddings.position_embeddings.weight.data
+                my_pos_embeddings.weight.data[512:] = self.bert.model.embeddings.position_embeddings.weight.data[-1][
+                                                      None, :].repeat(config.max_input_length - 512, 1)
+                self.bert.model.embeddings.position_embeddings = my_pos_embeddings
+        else:
+            ext = GuidedExtSum.load_from_checkpoint(config.base_model_pretrained, config=config, data_module=data_module)
+            self.bert = ext.bert
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
+            self.bert.model.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
             batch_first=True)
 
         self.guidance_transformer_encoder = nn.TransformerEncoderLayer(
-            self.bert.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
+            self.bert.model.config.hidden_size, config.encoder_heads, config.encoder_ff_dim, config.encoder_dropout,
             batch_first=True)
 
     def forward(self, x_input: dict, x_guidance: dict):
@@ -486,11 +525,11 @@ class AbsSumTransformerEncoder(nn.Module):
         Returns
             Encoded input sequence; Tensor of shape [BATCH_SIZE x INPUT_SEQUENCE_LENGTH x BERT_HIDDEN_SIZE]
         """
-        input_vec = self.bert(x_input['token_ids'], attention_mask=x_input['attention_mask'], token_type_ids=x_input['segment_ids'])
-        input_vec = self.input_transformer_encoder(input_vec['last_hidden_state'], src_key_padding_mask=(1 - x_input['attention_mask']).bool())
+        input_vec = self.bert(x_input)
+        input_vec = self.input_transformer_encoder(input_vec, src_key_padding_mask=(1 - x_input['attention_mask']).bool())
 
-        guidance_vec = self.bert(x_guidance['token_ids'], attention_mask=x_guidance['attention_mask'], token_type_ids=x_guidance['segment_ids'])
-        guidance_vec = self.guidance_transformer_encoder(guidance_vec['last_hidden_state'], src_key_padding_mask=(1 - x_guidance['attention_mask']).bool())
+        guidance_vec = self.bert(x_guidance)
+        guidance_vec = self.guidance_transformer_encoder(guidance_vec, src_key_padding_mask=(1 - x_guidance['attention_mask']).bool())
 
         return input_vec, guidance_vec
 
