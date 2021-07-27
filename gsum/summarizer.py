@@ -141,8 +141,8 @@ class GuidedAbsSum(pl.LightningModule):
             # Prepare decoder input
             target = torch.cat(
                 [result.token_ids.reshape(1, self.config.max_target_length) for result in results_in_progress])
-            state = self.dec.create_decoder_state(torch.stack(batch_x_guidance_token_ids),
-                                                  torch.stack(batch_x_input_token_ids))
+            state = self.dec.create_decoder_state(torch.stack(batch_x_input_token_ids),
+                                                  torch.stack(batch_x_guidance_token_ids))
 
             dec_out, state = self.dec(target, torch.stack(batch_topic_vecs), torch.stack(batch_gui_vecs), state)
             output = self.gen(dec_out)
@@ -501,7 +501,7 @@ class AbsSumTransformerEncoder(nn.Module):
                                                       None, :].repeat(config.max_input_length - 512, 1)
                 self.bert.model.embeddings.position_embeddings = my_pos_embeddings
         else:
-            ext = GuidedExtSum.load_from_checkpoint(config.base_model_pretrained, config=config, data_module=data_module)
+            ext = GuidedExtSum.load_from_checkpoint(config.base_model_pretrained, cfg=config, data_module=data_module)
             self.bert = ext.bert
 
         self.input_transformer_encoder = nn.TransformerEncoderLayer(
@@ -649,7 +649,7 @@ class AbsSumTransformerDecoderLayer(nn.Module):
                                                          encoder_input_context,
                                                          attn_mask=encoder_input_mask)
         input_attn_out = self.drop(input_attn_out) + signal_attn_out
-
+        input_attn_out = self.feed_forward(input_attn_out)
         return input_attn_out, target
 
 

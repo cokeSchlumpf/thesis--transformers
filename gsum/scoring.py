@@ -15,19 +15,26 @@ from .summarizer import GuidedAbsSum, GuidedExtSum
 
 
 def run_scoring_abs(
-        checkpoint_path: str = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt',
+        checkpoint_path: str = './data/trained/2021-07-25-2022/gsum-abs-epoch=07-val_loss=2059.89.ckpt',
+        reuse_cfg: bool = True,
         max_samples: int = 1000):
     """
     Executes inference with model from a given checkpoint.
 
     :param checkpoint_path The model/ checkpoint to be used to run inference.
+    :param reuse_cfg Reuse config which was used for training.
     :param max_samples The amount of samples to be inferred (might be less, if data loader does not have enough samples)
     """
 
     checkpoint_path = Path(checkpoint_path)
     scores_path = Path(f'{checkpoint_path.parent}/scores.pkl')
 
-    cfg = GuidedSummarizationConfig()
+    if reuse_cfg:
+        cfg_path = f'{checkpoint_path.parent}/config.json'
+        cfg = GuidedSummarizationConfig.from_file(cfg_path)
+    else:
+        cfg = GuidedSummarizationConfig()
+
     dat = GuidedSummarizationDataModule(cfg)
     mdl = GuidedAbsSum.load_from_checkpoint(str(checkpoint_path), cfg=cfg, data_module=dat)
     run_scoring(mdl, cfg, dat, scores_path, max_samples)
@@ -35,16 +42,17 @@ def run_scoring_abs(
 
 def run_scoring_ext(
         checkpoint_path: str = './data/trained/2021-07-22-0756/gsum-abs-epoch=13-val_loss=133.29.ckpt',
-        cfg_path: Optional[str] = './data/trained/2021-07-22-0756/config.json',
+        reuse_cfg: bool = True,
         max_samples: int = 1000):
 
     checkpoint_path = Path(checkpoint_path)
     scores_path = Path(f'{checkpoint_path.parent}/scores.pkl')
 
-    if cfg_path is not None:
+    if reuse_cfg:
+        cfg_path = f'{checkpoint_path.parent.absolute()}/config.json'
         cfg = GuidedSummarizationConfig.from_file(cfg_path)
     else:
-        cfg = GuidedSummarizationConfig.apply()
+        cfg = GuidedSummarizationConfig()
 
     dat = GuidedSummarizationDataModule(cfg)
     mdl = GuidedExtSum.load_from_checkpoint(str(checkpoint_path), cfg=cfg, data_module=dat)

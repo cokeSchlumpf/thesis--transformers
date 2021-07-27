@@ -100,7 +100,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             x_guidance = [preprocess_guidance_keywords(sample, self.lang, self.tokenizer, self.config.max_input_length) for sample in x]
             dataset = GuidedSummarizationDataset(x_prepared, x_guidance)
         elif self.config.guidance_method == 'extractive':
-            x_guidance = [preprocess_guidance_extractive(sample, self.lang, self.tokenizer, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
+            x_guidance = [preprocess_guidance_extractive(sample, self.lang, self.tokenizer, self.config.max_input_signal_length, self.config.max_input_sentences, self.config.min_sentence_tokens) for sample in x]
             dataset = GuidedSummarizationDataset(x_prepared, x_guidance)
         else:
             raise Exception(f"Invalid guidance signal `{self.config.guidance_method}`")

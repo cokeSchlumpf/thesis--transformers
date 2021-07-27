@@ -4,6 +4,7 @@ import pytorch_lightning as pl
 
 from datetime import datetime
 from lib.utils import write_string_to_file
+from pathlib import Path
 from pytorch_lightning.callbacks import ModelCheckpoint
 from typing import Optional
 
@@ -28,9 +29,14 @@ def train_abstractive(checkpoint_path: Optional[str] = None):
     cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
 
+    cfg.base_model_pretrained = './data/trained/2021-07-18-2237/gsum-abs-epoch=11-val_loss=169.96.ckpt'
+
     if checkpoint_path is None:
         mdl = GuidedAbsSum(cfg, dat)
     else:
+        training_path = Path(checkpoint_path).parent.absolute()
+        config_path = f'{training_path}/config.json'
+        cfg = GuidedSummarizationConfig.from_file(config_path)
         mdl = GuidedAbsSum.load_from_checkpoint(checkpoint_path, cfg=cfg, data_module=dat)
 
     train(mdl, cfg, dat)

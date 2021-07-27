@@ -300,7 +300,7 @@ def preprocess_guidance_keywords(source: str, lang: spacy.Language, tokenizer: P
         The encoded guidance signal.
     """
 
-    keywords = get_keywords(source, lang.lang)  # TODO map spaCy language to 'en' or 'de'
+    keywords = get_keywords(source, lang.lang)
     keywords = ' '.join(keywords)
     return preprocess_input_sample(keywords, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)
 
@@ -321,7 +321,7 @@ def preprocess_guidance_extractive(source: str, lang: spacy.Language, tokenizer:
         The encoded guidance signal.
     """
 
-    summary = get_summary(source, language=lang.lang)  # TODO map spaCy language to 'en' or 'de'
+    summary = get_summary(source, language=lang.lang)
     return preprocess_input_sample(summary, lang, tokenizer, max_length, max_input_sentences, min_sentence_tokens)
 
 
