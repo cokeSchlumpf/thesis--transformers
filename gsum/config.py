@@ -47,7 +47,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length (token count) for input sequences.
     """
-    max_input_length: int = 256
+    max_input_length: int = 512
 
     """
     The maximum length (token count) for target sequences.
@@ -57,7 +57,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length for signal sequences.
     """
-    max_input_signal_length: int = 64
+    max_input_signal_length: int = 512
 
     """
     The maximum number of sentences to be considered for document embeddings.
@@ -133,7 +133,12 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Maximum number of parallel processes during preparation.
     """
-    max_cpus: int = 8
+    max_cpus: int = 64
+
+    """
+    The number of batches used during pre-training.
+    """
+    max_batches: int = 32
 
     @staticmethod
     def from_file(file: str) -> 'GuidedSummarizationConfig':
@@ -177,6 +182,8 @@ class GuidedSummarizationConfig(BaseModel):
             mdl = 'distilbert-base-cased'
         elif base_model == 'distilbert' and lang == 'de':
             mdl = 'distilbert-base-german-cased'
+        elif base_model == 'electra' and lang == 'en':
+            mdl = 'google/electra-base-discriminator'
         elif base_model == 'electra' and lang == 'de':
             mdl = 'german-nlp-group/electra-base-german-uncased'
         elif base_model == 'multilingual':

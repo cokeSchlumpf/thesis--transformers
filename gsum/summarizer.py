@@ -378,7 +378,6 @@ class GuidedExtSum(pl.LightningModule):
 
         loss = self.loss(z, y['sentence_mask'].float() * (1 - x_input['cls_mask']).float())
         loss = (loss * (1 - x_input['cls_mask']).float()).sum()
-        loss = loss / loss.numel()
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
 
@@ -392,7 +391,7 @@ class GuidedExtSum(pl.LightningModule):
         return self.shared_step('test', batch)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), self.config.encoder_optim_lr)
+        return torch.optim.Adam(self.parameters(), self.config.encoder_optim_lr, betas = self.config.encoder_optim_beta, eps=self.config.encoder_optim_eps)
 
     def optimizer_step(
             self,
@@ -406,10 +405,7 @@ class GuidedExtSum(pl.LightningModule):
             using_lbfgs: bool = None) -> None:
 
         warmup = self.config.encoder_optim_warmup_steps
-        # lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
-
-        lr = self.config.encoder_optim_lr / 1000
-        lr = lr * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
+        lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
 
         self.log(f'opt_{optimizer_idx}_lr', lr, True)
 

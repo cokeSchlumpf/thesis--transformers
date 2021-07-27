@@ -6,6 +6,7 @@ from lib.utils import extract_sentence_tokens
 from transformers import PreTrainedTokenizer
 from typing import List
 
+import re
 import spacy
 import torch
 
@@ -91,20 +92,78 @@ class GuidedSummarizationExtractiveTarget:
         }
 
 
-def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.Language, max_input_sentences: int = 128, method: str = 'similarity') -> GuidedSummarizationExtractiveTarget:
+def preprocess_extractive_output_sample(source: str, sample: str, lang: spacy.Language, max_length: int = 512, max_input_sentences: int = 128, min_sentence_tokens: int = 5, method: str = 'similarity') -> GuidedSummarizationExtractiveTarget:
     """
     Preprocesses targets for extractive summarization.
 
     :param source The text which should be summarized
     :param sample The summarized source
     :param lang A spaCy language model which is used for text-processing
+    :param max_length The maximum input length which is expected by the input encoder
     :param max_input_sentences The max. number of sentences from the input to be used
+    :param min_sentence_tokens The minimum length of sentences to be included in the encoded input.
     :param method Which method should be used for extracting sentences? Possible options are 'similarity' or 'oracle'.
     """
+
+    def remove_trailing_punctuation(sents: List[List[str]]):
+        """
+        After splitting sample into sentences. Each sentence still contains its final punctuation.
+        This function removes it.
+        """
+        res = []
+        for sent in sents:
+            if sent[-1] == '.' or sent[-1] == '!' or sent[-1] == '?':
+                res += [sent[0:-1]]
+            else:
+                res += [sent]
+
+        return res
+
+    def add_control_tokens(sents: List[List[str]]):
+        """
+        Each sentence is wrapped with a [CLS] token upfront and a trailing [SEP] token to distinguish between
+        sentences.
+        """
+        res = []
+        for sent in sents:
+            res += [[INPUT_CLS] + sent + [INPUT_SEP]]
+
+        return res
+
+    def flatten_and_shorten(sents: List[List[str]]) -> str:
+        """
+        This function flattens the list of sentences to a single list of tokens.
+        """
+        # sample_tokens will contain all tokens of the sample
+        output = ""
+        token_count = 0
+
+        for i, sent in enumerate(sents):
+            if (token_count + len(sent) <= max_length) and (len(sent) >= min_sentence_tokens):
+                token_count += len(sent)
+                output += ' '.join(sent)
+            elif len(sent) < min_sentence_tokens:
+                # Just skip the sentence
+                pass
+            else:
+                # Stop preparing sample.
+                break
+
+        output = output.replace(INPUT_CLS, '')
+        output = output.replace(f' {INPUT_SEP}', '.')
+        output = output.replace(f' ,', ',')
+        output = output.replace(f' \'', '\'')
+        output = re.sub(r'\s([:?.!,"](?:\s|$))', r'\1', output)
+        return output
 
     pipeline = [simple_punctuation_only, to_lower]
     source_cleaned = preprocess_text(source, lang, pipeline, [clean_html])
     sample_cleaned = preprocess_text(sample, lang, pipeline, [clean_html])
+
+    source_sentences = extract_sentence_tokens(lang, source_cleaned)
+    source_sentences = remove_trailing_punctuation(source_sentences)
+    source_sentences = add_control_tokens(source_sentences)
+    source_cleaned = flatten_and_shorten(source_sentences)
 
     if method == 'similarity':
         summary, sentence_ids, sentence_mask = most_similar_sentences(source_cleaned, sample_cleaned, lang, max_input_sentences)

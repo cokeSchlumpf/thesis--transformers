@@ -159,7 +159,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         if os.path.isfile(path):
             return path
         else:
-            result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_sentences, self.config.extractive_preparation_method) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
+            result = [preprocess_extractive_output_sample(row['text'], row['summary'], self.lang, self.config.max_input_length, self.config.max_input_sentences, self.config.min_sentence_tokens, self.config.extractive_preparation_method) for idx, row in tqdm(df.iterrows(), total=len(df.index))]
             write_object_to_file(path, result)
             return path
 
@@ -203,7 +203,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
         raw_data_checksum = raw_source_checksum + raw_target_checksum
         write_string_to_file(raw_data_checksum_path, raw_data_checksum)
 
-        batches = enumerate(np.array_split(raw_data, mp.cpu_count()))
+        batches = enumerate(np.array_split(raw_data, self.config.max_batches))
         batches = list(map(lambda t: (dataset, t[0], t[1]), batches))
 
         #
@@ -322,7 +322,7 @@ class GuidedSummarizationDataModule(pl.LightningDataModule):
             prepared_guidance_key_path = self.config.data_prepared_path + '/' + dataset + '.prepared.guidance.key.pkl'
             prepared_guidance: List[GuidedSummarizationInput] = read_file_to_object(prepared_guidance_key_path)
         else:
-            prepared_guidance = prepared_source
+            prepared_guidance = read_file_to_object(prepared_source_path)
 
         #
         # Remove empty samples as they would lead to errors during training.
