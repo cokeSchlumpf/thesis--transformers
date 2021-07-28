@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import os
 import pytorch_lightning as pl
+import torch
 
 from datetime import datetime
 from lib.utils import write_string_to_file
@@ -58,7 +59,7 @@ def train(mdl: pl.LightningModule, cfg: GuidedSummarizationConfig, dat: GuidedSu
         mode='min')
 
     trainer = pl.Trainer(
-        gpus=0 if cfg.is_debug else 1,
+        gpus=0 if cfg.is_debug else torch.cuda.device_count(),
         default_root_dir=training_path,
         val_check_interval=1 if cfg.is_debug else 0.1,
         accumulate_grad_batches=cfg.accumulate_grad_batches,

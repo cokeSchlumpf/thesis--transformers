@@ -27,7 +27,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     Training batch sizes (training, test, validation, inference)
     """
-    batch_sizes: Tuple[int, int, int, int] = (36, 20, 36, 50)
+    batch_sizes: Tuple[int, int, int, int] = (20, 20, 20, 50)
 
     """
     Number of batches to accumulate during training.
@@ -199,10 +199,10 @@ class GuidedSummarizationConfig(BaseModel):
         cfg.spacy_model = 'en_core_web_sm' if lang == 'en' else 'de_core_news_md'
 
         if extractive:
-            cfg.accumulate_grad_batches = 1
+            cfg.accumulate_grad_batches = 4
             cfg.encoder_optim_warmup_steps = 10000
             cfg.decoder_optim_warmup_steps = 8000
-            cfg.batch_sizes = (36, 20, 36, 50)
+            cfg.batch_sizes = (20, 20, 20, 50)
         else:
             cfg.accumulate_grad_batches = 5
             cfg.encoder_optim_warmup_steps = 20000

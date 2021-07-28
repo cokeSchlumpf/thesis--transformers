@@ -237,7 +237,7 @@ class GuidedAbsSum(pl.LightningModule):
 
         lr = lr * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
 
-        self.log(f'opt_{optimizer_idx}_lr', lr, True)
+        self.log(f'opt_{optimizer_idx}_lr', lr, prog_bar=True)
 
         for pg in optimizer.param_groups:
             pg['lr'] = lr
@@ -377,7 +377,7 @@ class GuidedExtSum(pl.LightningModule):
         z = self.predict(x_input)
 
         loss = self.loss(z, y['sentence_mask'].float() * (1 - x_input['cls_mask']).float())
-        loss = (loss * (1 - x_input['cls_mask']).float()).sum()
+        loss = (loss * (1 - x_input['cls_mask']).float()).sum() / loss.numel()
         self.log(f'{step}_loss', loss, prog_bar=True)
         return loss
 
@@ -407,7 +407,7 @@ class GuidedExtSum(pl.LightningModule):
         warmup = self.config.encoder_optim_warmup_steps
         lr = 2 * np.exp(-3) * min((self.trainer.global_step + 1) ** (-.5), (self.trainer.global_step + 1) * warmup ** (-1.5))
 
-        self.log(f'opt_{optimizer_idx}_lr', lr, True)
+        self.log(f'opt_{optimizer_idx}_lr', lr, prog_bar=True)
 
         for pg in optimizer.param_groups:
             pg['lr'] = lr
