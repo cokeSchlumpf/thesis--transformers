@@ -30,8 +30,6 @@ def train_abstractive(checkpoint_path: Optional[str] = None):
     cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
 
-    cfg.base_model_pretrained = './data/trained/2021-07-18-2237/gsum-abs-epoch=11-val_loss=169.96.ckpt'
-
     if checkpoint_path is None:
         mdl = GuidedAbsSum(cfg, dat)
     else:
