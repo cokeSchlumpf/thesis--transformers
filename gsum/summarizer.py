@@ -1120,7 +1120,7 @@ class BeamSearchResult(SummarizationResult):
                    (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and
                     self.tokens[-3] == self.tokens[-6])
 
-    def is_complete(self, n: int = 3) -> bool:
+    def is_complete(self, n: int = 2) -> bool:
         return self.tokens.count(TARGET_SEP) >= n
 
     def length(self) -> int:
