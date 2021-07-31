@@ -47,7 +47,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length (token count) for input sequences.
     """
-    max_input_length: int = 512
+    max_input_length: int = 256
 
     """
     The maximum length (token count) for target sequences.
@@ -57,7 +57,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length for signal sequences.
     """
-    max_input_signal_length: int = 512
+    max_input_signal_length: int = 256
 
     """
     The maximum number of sentences to be considered for document embeddings.
@@ -207,7 +207,7 @@ class GuidedSummarizationConfig(BaseModel):
             cfg.accumulate_grad_batches = 5
             cfg.encoder_optim_warmup_steps = 20000
             cfg.decoder_optim_warmup_steps = 10000
-            cfg.batch_sizes = (20, 20, 20, 50)
+            cfg.batch_sizes = (15, 15, 15, 50)
             cfg.base_model_pretrained = base_model_pretrained
 
         if base_model == 'distilbert':
