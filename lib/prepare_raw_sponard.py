@@ -2,8 +2,8 @@ from pathlib import Path
 from sklearn.model_selection import train_test_split
 from utils import read_file_to_object
 
-SOURCE_DATA = '../data/downloaded/spon-ard/spon_ard_clean.pkl'
-TARGET_DIRECTORY = '../data/raw/sponard'
+SOURCE_DATA = '../data/downloaded/spon_ard/spon_ard_clean.pkl'
+TARGET_DIRECTORY = '../data/raw/spon_ard'
 
 
 def main(source_data=SOURCE_DATA, target_directory=TARGET_DIRECTORY):
