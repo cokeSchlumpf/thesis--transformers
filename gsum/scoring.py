@@ -92,8 +92,12 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
         })
 
         df_results['summary_oracle'] = [create_oracle_summary(row['text'], row['summary'], dat.lang, cfg.max_input_length, cfg.min_sentence_tokens) for _, row in df_results.iterrows()]
+        df_results['summary_oracle_orig'] = [
+            extract_oracle_summary(row['text'], row['summary'], dat.lang, summary_length=3)[0]
+            for _, row in df_results.iterrows()]
         df_results = calculate_rouge_scores(df_results, dat.lang)
         df_results = calculate_rouge_scores(df_results, dat.lang, predicted_col='summary_oracle', prefix='oracle_')
+        df_results = calculate_rouge_scores(df_results, dat.lang, predicted_col='summary_oracle_orig', prefix='oracle_orig_')
 
         print('> Store results of batch')
 
