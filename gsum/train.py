@@ -15,7 +15,7 @@ from .summarizer import GuidedAbsSum, GuidedExtSum
 
 
 def train_extractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', True, extractive_preparation_method='oracle')
+    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'distilbert', True, extractive_preparation_method='oracle')
     dat = GuidedSummarizationDataModule(cfg, is_extractive=True)
 
     if checkpoint_path is None:
@@ -27,7 +27,7 @@ def train_extractive(checkpoint_path: Optional[str] = None):
 
 
 def train_abstractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
+    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'multilingual', False, guidance_signal='oracle', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
 
     if checkpoint_path is None:

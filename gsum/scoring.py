@@ -1,17 +1,26 @@
 import pandas as pd
+import re
 import spacy
 import torch
 
 from lib.oracle_summary import extract_oracle_summary
 from lib.text_preprocessing import clean_html, preprocess_text, simple_punctuation_only, to_lower
-from lib.utils import read_file_to_object, write_object_to_file
+from lib.utils import read_file_to_object, write_object_to_file, extract_sentence_tokens
 from pathlib import Path
 from rouge_score import rouge_scorer
-from typing import Optional
+from typing import List
 
 from .config import GuidedSummarizationConfig
 from .data import GuidedSummarizationDataModule
 from .summarizer import GuidedAbsSum, GuidedExtSum
+
+
+PAD = '[PAD]'  # padding token
+INPUT_SEP = '[SEP]'  # segment separation token
+INPUT_CLS = '[CLS]'  # sentence classification token
+TARGET_BOS = '[unused0]'  # begin of sequence token
+TARGET_EOS = '[unused1]'  # end of sequence token
+TARGET_SEP = '[unused2]'  # separator token
 
 
 def run_scoring_abs(
@@ -82,7 +91,7 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
             'summary_predicted': list(map(lambda s: s.text(), summaries))
         })
 
-        df_results['summary_oracle'] = [extract_oracle_summary(row['text'], row['summary'], dat.lang, summary_length=3)[0] for _, row in df_results.iterrows()]
+        df_results['summary_oracle'] = [create_oracle_summary(row['text'], row['summary'], dat.lang, cfg.max_input_length, cfg.min_sentence_tokens) for _, row in df_results.iterrows()]
         df_results = calculate_rouge_scores(df_results, dat.lang)
         df_results = calculate_rouge_scores(df_results, dat.lang, predicted_col='summary_oracle', prefix='oracle_')
 
@@ -99,6 +108,70 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
 
         if (batch_idx + 1) >= batches_required:
             break
+
+
+def create_oracle_summary(text: str, summary: str, lang: spacy.Language, max_length: int, min_sentence_tokens: int) -> str:
+    def remove_trailing_punctuation(sents: List[List[str]]):
+        """
+        After splitting sample into sentences. Each sentence still contains its final punctuation.
+        This function removes it.
+        """
+        res = []
+        for sent in sents:
+            if sent[-1] == '.' or sent[-1] == '!' or sent[-1] == '?':
+                res += [sent[0:-1]]
+            else:
+                res += [sent]
+
+        return res
+
+    def add_control_tokens(sents: List[List[str]]):
+        """
+        Each sentence is wrapped with a [CLS] token upfront and a trailing [SEP] token to distinguish between
+        sentences.
+        """
+        res = []
+        for sent in sents:
+            res += [[INPUT_CLS] + sent + [INPUT_SEP]]
+
+        return res
+
+    def flatten_and_shorten(sents: List[List[str]]) -> str:
+        """
+        This function flattens the list of sentences to a single list of tokens.
+        """
+        # sample_tokens will contain all tokens of the sample
+        output = ""
+        token_count = 0
+
+        for i, sent in enumerate(sents):
+            if (token_count + len(sent) <= max_length) and (len(sent) >= min_sentence_tokens):
+                token_count += len(sent)
+                output += ' '.join(sent)
+            elif len(sent) < min_sentence_tokens:
+                # Just skip the sentence
+                pass
+            else:
+                # Stop preparing sample.
+                break
+
+        output = output.replace(INPUT_CLS, '')
+        output = output.replace(f' {INPUT_SEP}', '.')
+        output = output.replace(f' ,', ',')
+        output = output.replace(f' \'', '\'')
+        output = re.sub(r'\s([:?.!,"](?:\s|$))', r'\1', output)
+        return output
+
+    pipeline = [simple_punctuation_only, to_lower]
+    source_cleaned = preprocess_text(text, lang, pipeline, [clean_html])
+    sample_cleaned = preprocess_text(summary, lang, pipeline, [clean_html])
+
+    source_sentences = extract_sentence_tokens(lang, source_cleaned)
+    source_sentences = remove_trailing_punctuation(source_sentences)
+    source_sentences = add_control_tokens(source_sentences)
+    source_cleaned = flatten_and_shorten(source_sentences)
+
+    return extract_oracle_summary(source_cleaned, sample_cleaned, lang, summary_length=3)[0]
 
 
 def calculate_rouge_scores(df: pd.DataFrame, lang: spacy.Language, rouge_n: int = 3, reference_col: str = 'summary', predicted_col: str = 'summary_predicted', prefix: str = '') -> pd.DataFrame:
