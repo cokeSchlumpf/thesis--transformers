@@ -14,8 +14,10 @@ from .data import GuidedSummarizationDataModule
 from .summarizer import GuidedAbsSum, GuidedExtSum
 
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 def train_extractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', True, extractive_preparation_method='oracle')
+    cfg = GuidedSummarizationConfig.apply('mlsum', 'bert', True, extractive_preparation_method='oracle')
     dat = GuidedSummarizationDataModule(cfg, is_extractive=True)
 
     if checkpoint_path is None:
@@ -27,10 +29,8 @@ def train_extractive(checkpoint_path: Optional[str] = None):
 
 
 def train_abstractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('cnn_dailymail', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
+    cfg = GuidedSummarizationConfig.apply('mlsum', 'multilingual', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
-
-    cfg.base_model_pretrained = './data/trained/2021-07-18-2237/gsum-abs-epoch=11-val_loss=169.96.ckpt'
 
     if checkpoint_path is None:
         mdl = GuidedAbsSum(cfg, dat)
@@ -59,7 +59,7 @@ def train(mdl: pl.LightningModule, cfg: GuidedSummarizationConfig, dat: GuidedSu
         mode='min')
 
     trainer = pl.Trainer(
-        gpus=0 if cfg.is_debug else torch.cuda.device_count(),
+        gpus=0 if cfg.is_debug else [0],
         default_root_dir=training_path,
         val_check_interval=1 if cfg.is_debug else 0.1,
         accumulate_grad_batches=cfg.accumulate_grad_batches,

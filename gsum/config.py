@@ -47,7 +47,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length (token count) for input sequences.
     """
-    max_input_length: int = 512
+    max_input_length: int = 256
 
     """
     The maximum length (token count) for target sequences.
@@ -57,7 +57,7 @@ class GuidedSummarizationConfig(BaseModel):
     """
     The maximum length for signal sequences.
     """
-    max_input_signal_length: int = 512
+    max_input_signal_length: int = 256
 
     """
     The maximum number of sentences to be considered for document embeddings.
@@ -199,7 +199,7 @@ class GuidedSummarizationConfig(BaseModel):
         cfg.spacy_model = 'en_core_web_sm' if lang == 'en' else 'de_core_news_md'
 
         if extractive:
-            cfg.accumulate_grad_batches = 4
+            cfg.accumulate_grad_batches = 1
             cfg.encoder_optim_warmup_steps = 10000
             cfg.decoder_optim_warmup_steps = 8000
             cfg.batch_sizes = (20, 20, 20, 50)
@@ -207,12 +207,15 @@ class GuidedSummarizationConfig(BaseModel):
             cfg.accumulate_grad_batches = 5
             cfg.encoder_optim_warmup_steps = 20000
             cfg.decoder_optim_warmup_steps = 10000
-            cfg.batch_sizes = (15, 15, 15, 25)
+            cfg.batch_sizes = (15, 15, 15, 50)
             cfg.base_model_pretrained = base_model_pretrained
 
         if base_model == 'distilbert':
             cfg.encoder_optim_lr = 2e-3
             cfg.decoder_optim_lr = 0.05
+
+        if base_model == 'electra':
+            cfg.encoder_optim_lr = 0.1
 
         cfg.guidance_method = guidance_signal
         cfg.extractive_preparation_method = extractive_preparation_method

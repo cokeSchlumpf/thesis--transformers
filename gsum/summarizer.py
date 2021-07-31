@@ -57,6 +57,8 @@ class GuidedAbsSum(pl.LightningModule):
         #
 
     def forward(self, x: List[str]) -> Tuple[List['SummarizationResult'], float]:
+        print(self.device)
+
         self.enc.to(self.device)
         self.dec.to(self.device)
         self.gen.to(self.device)
@@ -1047,7 +1049,7 @@ class BeamSearchState:
 
     def sort_and_clean(self) -> None:
         self.results = sorted(self.results, key=lambda r: r.beam_prob(self.alpha), reverse=True)
-        self.results = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating(), self.results))
+        self.results = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating() and not r.is_complete(), self.results))
         self.results = self.results[:self.k]
 
 
@@ -1119,6 +1121,9 @@ class BeamSearchResult(SummarizationResult):
                    (self.length() >= 4 and self.tokens[-1] == self.tokens[-3] and self.tokens[-2] == self.tokens[-4]) or \
                    (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and
                     self.tokens[-3] == self.tokens[-6])
+
+    def is_complete(self, n: int = 2) -> bool:
+        return self.tokens.count('.') >= n or (len(self.tokens) > 30 and self.tokens.count('[UNK]') > 0.2 * len(self.tokens))
 
     def length(self) -> int:
         return len(self.tokens)
