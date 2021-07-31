@@ -199,7 +199,7 @@ class GuidedSummarizationConfig(BaseModel):
         cfg.spacy_model = 'en_core_web_sm' if lang == 'en' else 'de_core_news_md'
 
         if extractive:
-            cfg.accumulate_grad_batches = 4
+            cfg.accumulate_grad_batches = 1
             cfg.encoder_optim_warmup_steps = 10000
             cfg.decoder_optim_warmup_steps = 8000
             cfg.batch_sizes = (20, 20, 20, 50)
@@ -213,6 +213,9 @@ class GuidedSummarizationConfig(BaseModel):
         if base_model == 'distilbert':
             cfg.encoder_optim_lr = 2e-3
             cfg.decoder_optim_lr = 0.05
+
+        if base_model == 'electra':
+            cfg.encoder_optim_lr = 0.1
 
         cfg.guidance_method = guidance_signal
         cfg.extractive_preparation_method = extractive_preparation_method
