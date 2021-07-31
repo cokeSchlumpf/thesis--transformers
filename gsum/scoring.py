@@ -50,7 +50,7 @@ def run_scoring_abs(
 
 
 def run_scoring_ext(
-        checkpoint_path: str = './data/trained/2021-07-29-1458/gsum-abs-epoch=00-val_loss=0.11-v1.ckpt',
+        checkpoint_path: str = './data/trained/2021-07-19-1004/gsum-abs-epoch=19-val_loss=129.05.ckpt',
         reuse_cfg: bool = True,
         max_samples: int = 1000):
 
@@ -115,6 +115,7 @@ def run_scoring(mdl: torch.nn.Module, cfg: GuidedSummarizationConfig, dat: Guide
 
 
 def create_oracle_summary(text: str, summary: str, lang: spacy.Language, max_length: int, min_sentence_tokens: int) -> str:
+
     def remove_trailing_punctuation(sents: List[List[str]]):
         """
         After splitting sample into sentences. Each sentence still contains its final punctuation.

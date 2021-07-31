@@ -17,7 +17,7 @@ from .summarizer import GuidedAbsSum, GuidedExtSum
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def train_extractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('mlsum', 'bert', True, extractive_preparation_method='oracle')
+    cfg = GuidedSummarizationConfig.apply('spon_ard', 'bert', True, extractive_preparation_method='oracle')
     dat = GuidedSummarizationDataModule(cfg, is_extractive=True)
 
     if checkpoint_path is None:
@@ -29,7 +29,7 @@ def train_extractive(checkpoint_path: Optional[str] = None):
 
 
 def train_abstractive(checkpoint_path: Optional[str] = None):
-    cfg = GuidedSummarizationConfig.apply('mlsum', 'multilingual', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
+    cfg = GuidedSummarizationConfig.apply('spon_ard', 'bert', False, guidance_signal='extractive', extractive_preparation_method='oracle', debug=False)
     dat = GuidedSummarizationDataModule(cfg)
 
     if checkpoint_path is None:
