@@ -171,6 +171,8 @@ class GuidedSummarizationConfig(BaseModel):
             lang = 'de'
         elif dataset == 'swisstext':
             lang = 'de'
+        elif dataset == 'ard_spon':
+            lang = 'de'
         else:
             raise Exception('unknown dataset')
 
