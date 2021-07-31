@@ -57,6 +57,8 @@ class GuidedAbsSum(pl.LightningModule):
         #
 
     def forward(self, x: List[str]) -> Tuple[List['SummarizationResult'], float]:
+        print(self.device)
+
         self.enc.to(self.device)
         self.dec.to(self.device)
         self.gen.to(self.device)
@@ -1120,8 +1122,8 @@ class BeamSearchResult(SummarizationResult):
                    (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and
                     self.tokens[-3] == self.tokens[-6])
 
-    def is_complete(self, n: int = 3) -> bool:
-        return self.tokens.count(TARGET_SEP) >= n
+    def is_complete(self, n: int = 2) -> bool:
+        return self.tokens.count('.') >= n or (len(self.tokens) > 30 and self.tokens.count('[UNK]') > 0.2 * len(self.tokens))
 
     def length(self) -> int:
         return len(self.tokens)
