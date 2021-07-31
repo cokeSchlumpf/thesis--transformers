@@ -207,7 +207,7 @@ class GuidedSummarizationConfig(BaseModel):
             cfg.accumulate_grad_batches = 5
             cfg.encoder_optim_warmup_steps = 20000
             cfg.decoder_optim_warmup_steps = 10000
-            cfg.batch_sizes = (10, 10, 10, 25)
+            cfg.batch_sizes = (15, 15, 15, 50)
             cfg.base_model_pretrained = base_model_pretrained
 
         if base_model == 'distilbert':
