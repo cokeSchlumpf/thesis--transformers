@@ -16,6 +16,12 @@ def extract_oracle_summary(src: str, tgt: str, lang: spacy.Language, min_sentenc
     def _clean_line(line):
         return line.strip()
 
+    if not isinstance(src, str):
+        src = ''
+
+    if not isinstance(tgt, str):
+        tgt = ''
+
     src = _clean_line(src)
     tgt = _clean_line(tgt)
 

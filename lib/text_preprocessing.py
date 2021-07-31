@@ -18,7 +18,10 @@ def clean_html(s: str) -> str:
     :param s: The input string
     :return: The cleaned string
     """
-    return re.sub(CLEAN_HTML_PATTERN, '', s)
+    if isinstance(s, str):
+        return re.sub(CLEAN_HTML_PATTERN, '', s)
+    else:
+        return ''
 
 
 def lemmatize(token: Token) -> None:

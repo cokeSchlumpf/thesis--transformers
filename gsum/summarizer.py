@@ -1049,7 +1049,7 @@ class BeamSearchState:
 
     def sort_and_clean(self) -> None:
         self.results = sorted(self.results, key=lambda r: r.beam_prob(self.alpha), reverse=True)
-        self.results = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating() and not r.is_complete(), self.results))
+        self.results = list(filter(lambda r: (not r.is_eos() or r.length() > 3) and not r.is_repeating(), self.results))
         self.results = self.results[:self.k]
 
 
@@ -1111,7 +1111,7 @@ class BeamSearchResult(SummarizationResult):
         return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob], self.prob() * prob)
 
     def is_eos(self) -> bool:
-        return self.tokens[-1] == TARGET_EOS or len(self.tokens) >= self.max_length
+        return self.tokens[-1] == TARGET_EOS or len(self.tokens) >= self.max_length or self.is_complete()
 
     def is_repeating(self) -> bool:
         if self.length() <= 1:
