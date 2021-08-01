@@ -24,7 +24,7 @@ TARGET_SEP = '[unused2]'  # separator token
 
 
 def run_scoring_abs(
-        checkpoint_path: str = './data/trained/2021-07-08-0858/gsum-abs-epoch=11-val_loss=3046.30.ckpt',
+        checkpoint_path: str = './data/trained/2021-07-25-2022/gsum-abs-epoch=07-val_loss=2059.89.ckpt',
         reuse_cfg: bool = True,
         max_samples: int = 1000):
     """
@@ -50,7 +50,7 @@ def run_scoring_abs(
 
 
 def run_scoring_ext(
-        checkpoint_path: str = './data/trained/2021-07-19-1004/gsum-abs-epoch=19-val_loss=129.05.ckpt',
+        checkpoint_path: str = './data/trained/2021-07-18-2237/gsum-abs-epoch=11-val_loss=169.96.ckpt',
         reuse_cfg: bool = True,
         max_samples: int = 1000):
 

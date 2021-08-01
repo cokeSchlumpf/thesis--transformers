@@ -1111,7 +1111,7 @@ class BeamSearchResult(SummarizationResult):
         return BeamSearchResult(token_ids, self.tokens + [token], self.probs + [prob], self.prob() * prob)
 
     def is_eos(self) -> bool:
-        return self.tokens[-1] == TARGET_EOS or len(self.tokens) >= self.max_length or self.is_complete()
+        return self.tokens[-1] == TARGET_EOS or len(self.tokens) >= self.max_length  or self.is_complete()
 
     def is_repeating(self) -> bool:
         if self.length() <= 1:
@@ -1122,7 +1122,7 @@ class BeamSearchResult(SummarizationResult):
                    (self.length() >= 6 and self.tokens[-1] == self.tokens[-4] and self.tokens[-2] == self.tokens[-5] and
                     self.tokens[-3] == self.tokens[-6])
 
-    def is_complete(self, n: int = 2) -> bool:
+    def is_complete(self, n: int = 5) -> bool:
         return self.tokens.count('.') >= n or (len(self.tokens) > 30 and self.tokens.count('[UNK]') > 0.2 * len(self.tokens))
 
     def length(self) -> int:
