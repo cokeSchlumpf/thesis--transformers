@@ -186,10 +186,15 @@ Thumbs.db
 ### IntelliJ ###
 .idea
 .data
-data/*
 models
+
+data/downloaded/*
+data/prepared/*
 
 !data/raw
 data/raw/*
 !data/raw/IMDB Dataset.csv
 !data/raw/weatherAUS.csv
+
+data/trained/*/*.pkl
+data/trained/*/*.ckpt

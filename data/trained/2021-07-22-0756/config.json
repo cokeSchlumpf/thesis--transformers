@@ -1,0 +1,47 @@
+{
+  "is_debug": false,
+  "data_raw_path": "./data/raw/swisstext",
+  "data_prepared_path": "./data/prepared/swisstext",
+  "spacy_model": "de_core_news_md",
+  "extractive_preparation_method": "similarity",
+  "batch_sizes": [
+    36,
+    20,
+    36,
+    50
+  ],
+  "accumulate_grad_batches": 1,
+  "base_model_name": "bert-base-german-dbmdz-uncased",
+  "max_input_length": 256,
+  "max_target_length": 256,
+  "max_input_signal_length": 256,
+  "max_input_sentences": 32,
+  "min_sentence_tokens": 4,
+  "encoder_heads": 8,
+  "encoder_ff_dim": 2048,
+  "encoder_dropout": 0.1,
+  "decoder_layers": 6,
+  "decoder_heads": 8,
+  "decoder_dim": 768,
+  "decoder_ff_dim": 2048,
+  "decoder_dropout": 0.2,
+  "label_smoothing": 0.1,
+  "encoder_optim_lr": 0.002,
+  "encoder_optim_beta": [
+    0.9,
+    0.999
+  ],
+  "encoder_optim_warmup_steps": 10000,
+  "encoder_optim_eps": 1e-09,
+  "decoder_optim_lr": 0.1,
+  "decoder_optim_beta": [
+    0.9,
+    0.999
+  ],
+  "decoder_optim_warmup_steps": 8000,
+  "decoder_optim_eps": 1e-09,
+  "beam_k": 3,
+  "beam_alpha": 0.75,
+  "guidance_method": "extractive",
+  "max_cpus": 8
+}
